@@ -1,6 +1,6 @@
 # Scripts for mosthosts
 
-# Reading mosthosts and matching to DESI observations
+## Reading mosthosts and matching to DESI observations
 
 The jupyter notebook ``specmatch.ipynb`` reads in the mosthosts table
 and figures out what DESI observations (looking at the daily tables)
@@ -11,7 +11,7 @@ dataframe that has lots of information in it.  The information is a bit
 tangled, because each host might have multiple DESI observations.  As
 such, the information about the DESI observations are in lists.
 
-# Finding spectra
+## Finding spectra
 
 The library ``desi_specinfo.py`` is what you can use to pull out the
 spectra of a given mosthosts object.  To use it, import the file into
