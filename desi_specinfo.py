@@ -3,6 +3,8 @@ import logging
 import numpy as np
 import scipy
 import scipy.ndimage
+import psycopg2
+import psycopg2.extras
 from astropy.io import fits
 
 class TargetNotFound(Exception):
@@ -36,7 +38,7 @@ class SpectrumInfo(object):
        filename
     """
     
-    def __init__( self, ra, dec, desidb, collection='everest', logger=None ):
+    def __init__( self, ra, dec, desidb=None, desipasswd=None, collection='daily', logger=None ):
         self.ra = ra
         self.dec = dec
         self._targetids = set()
@@ -55,6 +57,14 @@ class SpectrumInfo(object):
         else:
             self.logger = logger
 
+        mustclose = False
+        if desidb is None:
+            mustclose = True
+            if desipasswd is None:
+                raise ValueError( "Must either pass a desidb or a desipasswd" )
+            desidb = psycopg2.connect( dbname='desi', host='decatdb.lbl.gov', user='desi', password=desipasswd,
+                                       cursor_factory=psycopg2.extras.RealDictCursor )
+            
         self.logger.info( f'Looking for {collection} spectra at ({ra:.4f}, {dec:.4f})' )
 
         cursor = desidb.cursor()
@@ -67,6 +77,8 @@ class SpectrumInfo(object):
             raise ValueError( f"Unknown collection {collection}" )
             
         cursor.close()
+        if mustclose:
+            desidb.close()
         
     def load_daily( self, cursor, ra, dec ):
         # Lots of redundant code with load_everest ; I should unify
@@ -82,40 +94,46 @@ class SpectrumInfo(object):
         self._tiledata = pandas.DataFrame( result )
         
         searchlist = []
-        for taregtid, tileid, night in zip( self._tiledata['targetid'], self._tiledata['tileid'], self._tiledata['night'] ):
-            self._targetid.add( targetid )
+        for targetid, tileid, night in zip( self._tiledata['targetid'], self._tiledata['tileid'], self._tiledata['night'] ):
+            self._targetids.add( targetid )
             searchlist.append( ( targetid, tileid, night ) ) 
             
+        self.logger.debug( f'searchlist is {searchlist}' )
         q = ( "SELECT targetid,tile,yyyymmdd,z,zerr,zwarn,deltachi2 FROM public.zbest_daily "
-              "WHERE (targetid,tile,yyyymmdd) IN %s" )
-        self.logger.debug( f'Running query: {cursor.mogrify( q, searchlist )}' )
-        cursor.execute( q, ( searchlist, ) )
+              "WHERE (targetid,tile,yyyymmdd) IN %(search)s" )
+        self.logger.debug( f'Running query: {cursor.mogrify( q, { "search": tuple(searchlist) } )}' )
+        cursor.execute( q, { 'search': tuple(searchlist) } )
         result = cursor.fetchall()
         zbest = pandas.DataFrame( result )
         
+        filenames = []
         zs = []
         zerrs = []
         zwarns = []
         deltachi2s = []
-        for i, row in self._tiledata.iterrows():
+        # Extremely irritating: pandas is converting all my int64s to float64s
+        #   when I do iterrows().  Makes me think this isn't the right 
+        #   datastructure.  Wory arond it with a big zip.
+        for tileid, night, petal_loc, targetid in zip( self._tiledata['tileid'], self._tiledata['night'],
+                                                       self._tiledata['petal_loc'], self._tiledata['targetid'] ):
             # See A. Kim's notes; I think this may not be always right.
             filenames.append( f'/global/cfs/cdirs/desi/spectro/redux/daily/tiles/cumulative/'
-                              f'row["tileid"]/row["night"]/'
-                              f'coadd-{row["petal_loc"]}-{row["tileid"]}-thru{row["night"]}.fits' )
-            subzbest = zbest[ ( zbest['targetid'] == row['targetid'] ) &
-                              ( zbest['tile'] == row['tileid'] ) &
-                              ( zbest['yyyymmdd'] == row['night'] ) ]
+                              f'{tileid}/{night}/'
+                              f'coadd-{petal_loc}-{tileid}-thru{night}.fits' )
+            subzbest = zbest[ ( zbest['targetid'] == targetid ) &
+                              ( zbest['tile'] == tileid ) &
+                              ( zbest['yyyymmdd'] == night ) ]
             if len(subzbest) == 0:
-                self.logger.warning( f'Coudn\'t find zbest for target={row["targetid"]}, '
-                                     f'tile={row["tileid"]}, night={row["night"]}' )
+                self.logger.warning( f'Coudn\'t find zbest for target={targetid}, '
+                                     f'tile={tileid}, night={night}' )
                 zs.append( -9999 )
                 zerrs.append( 0 )
                 zwarns.append( 0 )
                 deltachi2s.append( 0 )
             else:
                 if len(subzbest) > 1:
-                    self.logger.warning( f'Multiple zbest for target={row["targetid"]}, '
-                                         f'tile={row["tileid"]}, night={row["night"]}'
+                    self.logger.warning( f'Multiple zbest for target={target}, '
+                                         f'tile={tileid}, night={night}'
                                          f'just using the first one the database happened to return.' )
                 zs.append( subzbest['z'].iloc[0] )
                 zerrs.append( subzbest['zerr'].iloc[0] )
