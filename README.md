@@ -14,8 +14,12 @@ such, the information about the DESI observations are in lists.
 ## Finding spectra
 
 The library ``desi_specinfo.py`` is what you can use to pull out the
-spectra of a given mosthosts object.  To use it, import the file into
-your script.  Instantiate a SpectrumInfo object with:
+spectra of a given mosthosts object.  It will only work on NERSC,
+because it assumes it has access to the DESI files that are on
+cfs there.
+
+To use it, import the file into your script.  Instantiate a SpectrumInfo
+object with:
 
 ```
     specinfo = SpecInfo( ra, dec, desipasswd='...' )
