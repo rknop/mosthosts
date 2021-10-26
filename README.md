@@ -2,14 +2,18 @@
 
 ## Reading mosthosts and matching to DESI observations
 
-The jupyter notebook ``specmatch.ipynb`` reads in the mosthosts table
-and figures out what DESI observations (looking at the daily tables)
-correspond to hosts in that table.  This script is what produces the csv
-file of redshifts that I've sent out.  Look for the words **Look Here**;
-at that point in the script, the ``mosthosts`` variable is a Pandas
-dataframe that has lots of information in it.  The information is a bit
-tangled, because each host might have multiple DESI observations.  As
-such, the information about the DESI observations are in lists.
+This library ``mosthosts_desi.py`` has a class that reads the mosthosts
+table into a Pandas dataframe, and then adds information for all of the
+hosts from the zbest_daily and public_fibermap DESI tables.  Look at
+that file for  documentation, or do:
+
+```
+    from mostshost_desi import MostHostsDesi
+    help(MostHostsDesi)
+````
+
+The jupyter notebook ``specmatch.ipynb`` is an example of using this
+library.
 
 ## Finding spectra
 
@@ -25,11 +29,12 @@ object with:
     specinfo = SpecInfo( ra, dec, desipasswd='...' )
 ```
 
-where ``desipasswd`` must be the proper DESI password for connecting
-to the databse.  ra and dec are the ra and dec where you want to find
-DESI spectra.  By default, it will search the ``daily`` tables, but you
-can pass ``collection='everest'`` if you want to search the everst
-release instead.  (It doesn't support Denali.)
+where ``desipasswd`` must be the proper DESI password for connecting to
+the databse.  ra and dec are the ra and dec where you want to find DESI
+spectra.  By default, it will search the ``daily`` tables, but you can
+pass ``collection='everest'`` if you want to search the everst release
+instead.  (It doesn't support Denali.)  You can figure out a ra and dec
+you want to use from the ``mosthost_desi.py`` library described above.
 
 Once you've initialized the object, you can get a list of DESI target
 IDs with:
