@@ -1,48 +1,29 @@
 import sys
 
-from mosthosts_desi.py import MostHostsDesi
-from desi_specinfo.py import SpectrumInfo
+from mosthosts_desi import MostHostsDesi
+from mosthosts_skyportal import MostHostsSkyPortal
+from desi_specinfo import SpectrumInfo
 
-class SpExc(Exception):
-    def __init__( self, status, info, message, data=None ):
-        self.status = status
-        self.info = info
-        self.message = message
-        self.data = data
-
-    def __str__( self ):
-        return f'Status {status}: {info} ("{message}")'
-
-def sp_req( method, url, data=None, params=None ):
-    global logger
-
-    skyportal_token = 'a8e36acb-806e-4fd9-9e00-7d01f0be46a7'
-    headers = { 'Authorization': f'token {skyportal_token}' }
-    res = requests.request( method, url, json=data, params=params, headers=headers )
-
-    if res.status_code not in [200,400]:
-        logger.error( f'Got back status {res.status_code} ({res.reason})' )
-        raise SpExc( res.status_code, 'Unexpected status', res.reason )
-    if res.headers["content-type"][0:9] == "text/html":
-        logger.error( f'Got back text/html from skyportal' )
-        match = re.search( '^text/html; charset=([^;]*);?', res.headers["content-type"] )
-        if match is None:
-            logger.warning( f'Warning: can\'t get content type from header' )
-            charset = 'UTF-8'
-        else:
-            charset = match.group(1)
-        raise SpExc( res.status_code, 'Got back text/html', '', html2text.html2text(res.content.decode(charsert)) )
-    if res.status_code == 400:
-        errmsg = res.json()["message"]
-        logger.error( f'Got error return from skyportal: {errmsg}' )
-        raise SpExc( res.status_code, 'Skyportal error', errmsg )
-
-    return res
+def upload_desi_spectrum( sn_id, index, ordinal spectrumdata, mhsp ):
+    for band in ['B', 'R', 'Z']:
+        data = {
+            'obj_id': sn_id,
+            'label': 'Host_{band}_{index}_{ordinal}_{rob something about the date}'
+            'wavelengths': spectrumdata[f'{band}_wavelength'],
+            'fluxes': spectrumdata[f'{band}_flux'],
+            'errors': spectrumdata[f'{band}_dflux'],
+            'instrument_id': ROB FIGURE THIS OUT,
+            'observed_at': ROB FIGURE THIS OUT,
+            'group_ids': [36],
+            'type': 'host_center'
+            }
+        mhsp.sp_req( f'{mhsp.apiurl}/spectra', data=data )
+        
 
 # ======================================================================
 
 def main():
-    print( "This is broken, do not run." )
+    print( "This is a work in progress, do not run." )
     
     parser = argparse.ArgumentParser( "Do things.",
                                       description = ( "Be doing things." ) )
@@ -71,7 +52,10 @@ def main():
 
     mosthosts = MostHostsDesi( dbuser=args.dbuser, dbpasswd=args.dbpasswd, dbuserpwfile=args.dbuserpwfile,
                                force_regen=args.force_regen )
-    
+    mhsp = MostHostsSkyPortal( token=args.skyportal_token )
+
+    # Try to figure out which desi spectra are already uploaded
+
     
     
     

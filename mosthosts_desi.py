@@ -105,7 +105,7 @@ class MostHostsDesi(object):
         '''
 
         if logger is None:
-            self.logger = logging.getLogger( "main" )
+            self.logger = logging.getLogger( "mhd" )
             logout = logging.StreamHandler( sys.stderr )
             self.logger.addHandler( logout )
             logout.setFormatter( logging.Formatter( f'[%(asctime)s - %(levelname)s] - %(message)s' ) )
@@ -149,7 +149,7 @@ class MostHostsDesi(object):
                         mustregen = True
                         break
                 if not mustregen:
-                    self._df = self._df.set_index( ['snname', 'index' ] )
+                    self._df = self._df.set_index( ['spname', 'index' ] )
                     self._df = self._df.sort_index()
                     self.logger.info( "Read mosthosts_desi.csv" )
             else:
