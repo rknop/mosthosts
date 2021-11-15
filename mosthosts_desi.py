@@ -3,6 +3,7 @@ import sys
 import math
 import pathlib
 import logging
+import argparse
 import ast
 import psycopg2
 import psycopg2.extras
@@ -21,12 +22,14 @@ class MostHostsDesi(object):
     
     The dataframe has two indexes:
     
-    snname — the primary snname from the mosthosts table.  These names are heterogeneous, 
-             but will (usually) be a ZTF name if one such exists.
-    snhostnum — a counter starting from 0 for SNe from mosthosts that have more than host.
+    spname — the name used for skyportal.  This will be the TNS name if it exists,
+             else the IAU name if it exists, else the PTFIPTF name if it exists,
+             else snname
+    index — a counter starting from 1 for SNe from mosthosts that have more than one host.
     
     It has columns:
     
+    snname — the primary snname from the mosthosts table.  These names are heterogeneous.
     ra — ra of the host (degrees)
     dec — dec of the host (degrees)
     pmra —
@@ -135,7 +138,7 @@ class MostHostsDesi(object):
                 mustregen = False
                 # Verfiy we have the columns we expect
                 self.logger.info( f'Checking...' )
-                for col in [ 'snname', 'snhostnum', 'ra', 'dec', 'pmra', 'pmdec', 'ref_epoch', 'override', 'index',
+                for col in [ 'spname', 'snname', 'ra', 'dec', 'pmra', 'pmdec', 'ref_epoch', 'override', 'index',
                              'hemisphere', 'sn_ra', 'sn_dec', 'sn_z', 'program', 'priority', 'tns_name', 'iau_name',
                              'ptfiptf_name', 'zpix_targetid', 'zpix_nowarn_targetid', 'zpix_z', 'zpix_nowarn_z',
                              'zpix_zerr', 'zpix_nowarn_zerr', 'zpix_zwarn', 'zpix_nowarn_zwarn', 'zpix_spectype',
@@ -146,7 +149,7 @@ class MostHostsDesi(object):
                         mustregen = True
                         break
                 if not mustregen:
-                    self._df = self._df.set_index( ['snname', 'snhostnum' ] )
+                    self._df = self._df.set_index( ['snname', 'index' ] )
                     self._df = self._df.sort_index()
                     self.logger.info( "Read mosthosts_desi.csv" )
             else:
@@ -174,9 +177,22 @@ class MostHostsDesi(object):
         cursor.execute( q )
         mosthosts = pandas.DataFrame( cursor.fetchall() )
 
-        # Add a column that indexes the hosts for that one supernova, and then rearrange the table
-        mosthosts.insert( loc=0, column='snhostnum', value=mosthosts.groupby( 'snname' ).cumcount() )
-        mosthosts = mosthosts.set_index( ['snname', 'snhostnum' ] )
+        # Add the spname column
+        def get_spname( row ):
+            if row['tns_name'] != 'None':
+                return row['tns_name']
+            elif row['iau_name'] != 'None':
+                return row['iau_name']
+            elif row['ptfiptf_name'] != 'None':
+                return row['ptfiptf_name']
+            else:
+                return row['snname']
+        spname = mosthosts.apply( get_spname, axis=1 )
+        mosthosts['spname'] = spname
+            
+        # # Add a column that indexes the hosts for that one supernova, and then rearrange the table
+        # mosthosts.insert( loc=0, column='snhostnum', value=mosthosts.groupby( 'snname' ).cumcount() )
+        mosthosts = mosthosts.set_index( ['snname', 'index' ] )
         mosthosts = mosthosts.sort_index()
 
         # Add the fields that will have the desi spectrum info
@@ -243,7 +259,25 @@ class MostHostsDesi(object):
 # ======================================================================
 
 def main():
-    mhd = MostHostsDesi(dbuserpwfile="/home/desi/secrets/decatdb_desi_desi")
+    parser = argparse.ArgumentParser( "Generate/read mosthosts_desi.csv",
+                                      description = ( "This is really intended to be used as a library. "
+                                                      "See README.md: pandoc -t plain README.md | less" ) )
+    parser.add_argument( "-f", "--dbuserpwfile", default=None,
+                         help=( "File with oneline username password for DESI database.  (Make sure this file "
+                                "is not world-readable!!)  Must specify either htis, or -u and -p" ) )
+    parser.add_argument( "-u", "--dbuser", default=None, help="User for desi database" )
+    parser.add_argument( "-p", "--dbpasswd", default=None, help="Password for desi database" )
+    parser.add_argument( "-r", "--force-regen", default=False, action="store_true",
+                         help=( "Force regeneration of mosthosts_desi.csv from the desi database "
+                                " (by default, just read mosthosts_dei.csv, and do nothing)" ) )
+    args = parser.parse_args()
+
+    if ( args.dbuserpwfile is None ) and ( args.dbuser is None or args.dbpasswd is None ):
+        sys.stderr.write( "Must specify either -f, or both -u and -p.\n" )
+        sys.exit(20)
+
+    mhd = MostHostsDesi( dbuser=args.dbuser, dbpasswd=args.dbpasswd, dbuserpwfile=args.dbuserpwfile,
+                         force_regen=args.force_regen )
 
 # ======================================================================
 
