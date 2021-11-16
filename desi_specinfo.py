@@ -1,3 +1,5 @@
+# Requires the desi environment
+
 import sys
 import pandas
 import logging
@@ -7,6 +9,10 @@ import scipy.ndimage
 import psycopg2
 import psycopg2.extras
 from astropy.io import fits
+
+import desispec.spectra
+import desispec.io
+import desispec.coaddition
 
 class TargetNotFound(Exception):
     def __init__(self, message):
@@ -22,6 +28,8 @@ class SpectrumInfo(object):
     
     Then look at targetids to get a set of targetids that have spectra in everest at this ra/dec,
     and run the info_for_targetid(targetid) method to get a list of dicts with info about the spectra.
+
+    Run info_for_targetid(targetid) to get back redshifts, tiles, nights, etc. for that targetid.
     
     Run get_spectra(targetid) to get back a list of spectra for that targetid.
     
@@ -95,7 +103,8 @@ class SpectrumInfo(object):
         self._tiledata = pandas.DataFrame( result )
         
         searchlist = []
-        for targetid, tileid, night in zip( self._tiledata['targetid'], self._tiledata['tileid'], self._tiledata['night'] ):
+        for targetid, tileid, night in zip( self._tiledata['targetid'],
+                                            self._tiledata['tileid'], self._tiledata['night'] ):
             self._targetids.add( targetid )
             searchlist.append( ( targetid, tileid, night ) ) 
             
@@ -114,7 +123,7 @@ class SpectrumInfo(object):
         deltachi2s = []
         # Extremely irritating: pandas is converting all my int64s to float64s
         #   when I do iterrows().  Makes me think this isn't the right 
-        #   datastructure.  Wory arond it with a big zip.
+        #   datastructure.  Work arond it with a big zip.
         for tileid, night, petal_loc, targetid in zip( self._tiledata['tileid'], self._tiledata['night'],
                                                        self._tiledata['petal_loc'], self._tiledata['targetid'] ):
             # See A. Kim's notes; I think this may not be always right.
@@ -207,7 +216,7 @@ class SpectrumInfo(object):
         
     @property
     def targetids( self ):
-        """Return a list of targetids that have spectra in everest"""
+        """A set of targetids that have spectra in everest"""
         return self._targetids
     
     def info_for_targetid( self, targetid ):
@@ -229,40 +238,32 @@ class SpectrumInfo(object):
     def get_spectra( self, targetid, smooth=0 ):
         """Returns a list of spectra for the given targetid.
         
+        Order of the list corresponds to the order you get from info_for_targetid.
+
         It returns a list because there might be multiple spectra for the same targetid.
-        
-        smooth is the sigma in pixels to gaussian smooth the spectra.  (0 = no smoothing)
-        
-        Each element of the list is a dictionary, with fields:
-            B_wavelength
-            B_flux
-            B_dflux
-            R_wavelength
-            R_flux
-            R_dflux
-            Z_wavelength
-            Z_flux
-            Z_dflux
-            info
+
+        Each element of the list is a desispec.spectra.Spectra object
+        with just the singe target's spectrum.  The only element of
+        wave, flux, ivar should be 'brz', with the three combined.
         """    
 
         specinfo = self.info_for_targetid( targetid )
         spectra = []
         for spec in specinfo:
-            spectrum = { 'info': spec }
-            with fits.open(spec["filename"]) as hdulist:
-                w = np.where( hdulist['FIBERMAP'].data['DEVICE_LOC'] == spec["device_loc"] )[0]
-                if len(w) != 1:
-                    raise Exception( f'Found {len(w)} things in the fibermap with DEVICE_LOC={spec["device_loc"]}' )
-                index = w[0]
-                for λrange in ['B','R','Z']:
-                    spectrum[f'{λrange}_wavelength'] = hdulist[f'{λrange}_WAVELENGTH'].data
-                    flux = hdulist[f'{λrange}_FLUX'].data[index]
-                    dflux = 1./np.sqrt( hdulist[f'{λrange}_IVAR'].data[index] )
-                    if smooth > 0:
-                        flux = scipy.ndimage.gaussian_filter1d( flux, smooth )
-                        dflux = scipy.ndimage.gaussian_filter1d( dflux, smooth )
-                    spectrum[f'{λrange}_flux'] = flux
-                    spectrum[f'{λrange}_dflux'] = dflux
+            threespectrums = desispec.io.spectra.read_spectra( spec['filename'] ).select( targets=[targetid] )
+            # Combine B, R, Z into brz
+            spectrum = desispec.coaddition.coadd_cameras( threespectrums )
+
+            if smooth > 0:
+                spectrum.flux['brz'][0,:] = scipy.ndimage.gaussian_filter1d( spectrum.flux['brz'][0,:], smooth )
+                # This isn't the right thing to do!  Two problems
+                # 1. correlated errors.  This is thorny, and requires new data structures
+                # 2. Really, var[i,:] = sum( k(n)² var(i+n), n=-N..N )
+                #       where k(n) is the kernel that has half-width N
+                #    ...but this is only of limited meaning because of course the correlated
+                #    errors are huge.
+                # On the other hand, this WILL give you a feeling for the noise level
+                # in the original spectrum, which is maybe what we want.
+                spectrum.ivar['brz'][0,:] = scipy.ndimage.gaussian_filter1d( spectrum.ivar['brz'][0,:], smooth )
             spectra.append( spectrum )
         return spectra

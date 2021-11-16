@@ -42,7 +42,7 @@ class MostHostsSkyPortal:
             self.generate_df( regen=False )
         return self._df
 
-    @propery
+    @property
     def apiurl( self ):
         return self._spapi
     
@@ -72,10 +72,10 @@ class MostHostsSkyPortal:
     def generate_df( self, regen=False ):
         if not regen:
             try:
-                self.logger.info( "Reading sourcetable.pkl" )
-                self._df = pandas.read_pickle( "sourcetable.pkl" )
+                self.logger.info( "Reading skyportalcache.pkl" )
+                self._df = pandas.read_pickle( "skyportalcache.pkl" )
             except Exception as e:
-                self.logger.warning( "Failed to read sourcetable.pkl, regenerating." )
+                self.logger.warning( "Failed to read skyportalcache.pkl, regenerating." )
                 regen = True
 
         if regen:
@@ -98,8 +98,20 @@ class MostHostsSkyPortal:
 
             self._df = pandas.DataFrame( sources )
             self._df.set_index( 'id', inplace=True )
-            self._df.to_pickle( "sourcetable.pkl" )
+            self._df.to_pickle( "skyportalcache.pkl" )
 
+    def get_instrument_id( self, name ):
+        params = { 'name': name }
+        res = self.sp_req( 'GET', f'{self._spapi}/instrument', params=params )
+        if res.status_code != 200:
+            raise SpExc( f'Got status {res.status_code} from instrument query' )
+        data = res.json()
+        if ( 'status' not in data ) or ( data['status'] != 'success' ):
+            raise SpExc( 'Bad status from instrument query' )
+        if len( data['data'] ) == 0:
+            raise SpExc( f'Unknown instrument {name}' )
+        return data['data'][0]['id']
+            
 # ======================================================================
 
 def main():

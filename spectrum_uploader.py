@@ -1,23 +1,61 @@
+# This one requires the DESI environment to be set up, as it uses
+#  the desi libraries
+
 import sys
+import re
+import math
+import datetime
+
+import numpy as np
 
 from mosthosts_desi import MostHostsDesi
 from mosthosts_skyportal import MostHostsSkyPortal
 from desi_specinfo import SpectrumInfo
 
-def upload_desi_spectrum( sn_id, index, ordinal spectrumdata, mhsp ):
-    for band in ['B', 'R', 'Z']:
-        data = {
-            'obj_id': sn_id,
-            'label': 'Host_{band}_{index}_{ordinal}_{rob something about the date}'
-            'wavelengths': spectrumdata[f'{band}_wavelength'],
-            'fluxes': spectrumdata[f'{band}_flux'],
-            'errors': spectrumdata[f'{band}_dflux'],
-            'instrument_id': ROB FIGURE THIS OUT,
-            'observed_at': ROB FIGURE THIS OUT,
-            'group_ids': [36],
-            'type': 'host_center'
-            }
-        mhsp.sp_req( f'{mhsp.apiurl}/spectra', data=data )
+import desispec
+
+def upload_desi_spectrum( sn_id, index, night, spectrum, mhsp, instrument_id=None ):
+    """Upload a desispec.spectrum.Spectra to SkyPortal.
+
+    sn_id — the id on skyportal of the sn
+    index — the "index" field in Most Hosts for the host this is a spectrum of
+    night — either an integer or a string in the format yyyymmdd
+    spectrum — a desispec.spectrum.Spectra object.  It should have just a 
+               single spectrum, and a single band 'brz'
+    mhsp — a MostHostsSkyPortal object
+    instrument_id — The instrument_id for DESI on SkyPortal.  (Looks it up on SkyPortal if not supplied.)
+    """
+
+    yyyymmddparser = re.compile( '^(\d\d\d\d)(\d\d)(\d\d)$' )
+    match = yyyymmddparser.search( str(night) )
+    if match is None:
+        raise ValueError( f'Error parsing {night} for yyyymmdd' )
+    obsnight = datetime.datetime( int(match.group(1)), int(match.group(2)), int(match.group(3)) )
+    if instrument_id is None:
+        instrument_id = mhsp.get_instrument_id('DESI')
+
+    if ( 'brz' not in spectrum.wave.keys() ) or ( len(spectrum.wave.keys()) != 1 ):
+        raise ValueError( 'Spectrum must have a single band "brz".' )
+    if spectrum.flux['brz'].shape[0] != 1:
+        raise ValueError( 'Must have just a single spectrum.' )
+
+    # Deal with infinite errors
+    tinyivar = min( spectrum.ivar['brz'][ spectrum.ivar['brz'] > 0 ] ) / 1000.
+    error = np.sqrt( 1./spectrum.ivar['brz'][0,:] )
+    error[ np.isinf(error) ] = math.sqrt( 1./tinyivar )
+
+    data = {
+        'obj_id': sn_id,
+        'label': f'Host_{int(index)}_{night}',
+        'wavelengths': spectrum.wave['brz'].tolist(),
+        'fluxes': spectrum.flux['brz'][0,:].tolist(),
+        'errors': error.tolist(),
+        'instrument_id': instrument_id,
+        'observed_at': obsnight.isoformat(),
+        'group_ids': [36],
+        'type': 'host_center'
+        }
+    mhsp.sp_req( 'POST', f'{mhsp.apiurl}/spectra', data=data )
         
 
 # ======================================================================
