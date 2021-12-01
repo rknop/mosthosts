@@ -18,8 +18,59 @@ class SpExc(Exception):
         return f'Status {status}: {info} ("{message}")'
 
 class MostHostsSkyPortal:
-    mosthosts_group_id = 36
+    """Encapsulate info about what MostHosts candidates are on SkyPortal.
+
+    Instantiate one of these.  The df property is a Pandas dataframe
+    with useful information.  In addition, the sp_req and sp_req_data
+    methods can be used to further query skyportal (with some error
+    return checking built in.
+
+    The df dataframe is by default cached in "skyportalcache.pkl" in the
+    local directory.  Call the instance's generate_df method with
+    regen=True to force this file to be regenerated.  (Takes a little
+    while — several minutes.)
+
+    The dataframe is indexed by "id" (corresponds to object id on
+    Skyportal and spname in the MostHostsDesi object from
+    mosthosts_des.py).  It (probably) has columns (defined by SkyPortal):
+
+    ra
+    dec
+    ra_err
+    dec_err
+    ra_dis
+    dec_dis
+    redshift
+    redshift_error
+    redshift_history
+    gal_lon
+    gal_lat
+    luminosity_distance
+    dm
+    angular_diameter_distance
+    alias
+    classifications
+    annotations
+    transient
+    varstar
+    is_roid
+    score
+    altdata
+    origin
+    dist_nearest_source
+    mag_nearest_source
+    e_mag_nearest_source
+    detect_photometry_count
+    spectrum_exists
+    created_at
+    modified
+    internal_key
+    offset
+    groups
+    """
     
+    mosthosts_group_id = 36
+
     def __init__( self, url="https://desi-skyportal.lbl.gov", token=None, logger=None ):
         if token is None:
             raise Exception( "API token required" )
@@ -47,6 +98,13 @@ class MostHostsSkyPortal:
         return self._spapi
     
     def sp_req( self, method, url, data=None, params=None ):
+        """Query SkyPortal and return the result.
+
+        Raises an SpExc exception if there's an error return or if the
+        query returns text/html (instead of json).
+
+        Returns the data structure given by the SkyPortal API.
+        """
         headers = { 'Authorization': f'token {self._token}' }
         res = requests.request( method, url, json=data, params=params, headers=headers )
 
@@ -69,6 +127,28 @@ class MostHostsSkyPortal:
 
         return res
 
+    def sp_req_data( self, method, url, data=None, params=None ):
+        """Query SkyPortal and return the data in the result.
+        
+        Raises an SpExc exception if there's an error return or if the
+        query returns text/html (instead of json). Also raises an error
+        return if there's no "status", or if the status isn't "success".
+
+        Returns the "data" field from the API result
+        """
+        res = self.sp_req( method, url, data=data, params=params )
+        retval = res.json()
+        if 'status' not in retval:
+            raise SpExc( f'Skyportal query return had no status' )
+        if retval['status'] != 'success':
+            errstr = f'Skyportal query returned status {retval["status"]}'
+            if 'message' in retval:
+                errstr += f' ({retval["message"]})'
+            raise SpExc( errstr )
+        if 'data' not in retval:
+            raise SpExc( 'Skyportal query returned no data!' )
+        return retval['data']
+    
     def generate_df( self, regen=False ):
         if not regen:
             try:
@@ -88,8 +168,7 @@ class MostHostsSkyPortal:
                      'pageNumber': 1,
             }
             while len(sources) < totnumsrc:
-                res = self.sp_req( 'GET', f'{self._spapi}/sources', params=data )
-                info = res.json()['data']
+                info = self.sp_req_data( 'GET', f'{self._spapi}/sources', params=data )
                 totnumsrc = info['totalMatches']
                 data['pageNumber'] += 1
                 sources.extend( info['sources'] )
@@ -102,16 +181,21 @@ class MostHostsSkyPortal:
 
     def get_instrument_id( self, name ):
         params = { 'name': name }
-        res = self.sp_req( 'GET', f'{self._spapi}/instrument', params=params )
-        if res.status_code != 200:
-            raise SpExc( f'Got status {res.status_code} from instrument query' )
-        data = res.json()
-        if ( 'status' not in data ) or ( data['status'] != 'success' ):
-            raise SpExc( 'Bad status from instrument query' )
-        if len( data['data'] ) == 0:
+        data = self.sp_req_data('GET', f'{self._spapi}/instrument', params=params )
+        if len( data ) == 0:
             raise SpExc( f'Unknown instrument {name}' )
-        return data['data'][0]['id']
-            
+        return data[0]['id']
+
+    def spectra_for_obj( self, objid ):
+        """Return all spectra for a given SkyPortal object ID
+        
+        Data structure is defined by the SkyPortal API.  It's the
+        "spectra" field of "data" from
+        https://skyportal.io/docs/api.html#tag/spectra/paths/~1api~1sources~1obj_id~1spectra/get
+        """
+        data = self.sp_req_data( 'GET', f'{self._spapi}/sources/{objid}/spectra' )
+        return data['spectra']
+    
 # ======================================================================
 
 def main():

@@ -1,6 +1,7 @@
 # Requires the desi environment
 
 import sys
+import os
 import pandas
 import logging
 import numpy as np
@@ -101,6 +102,17 @@ class SpectrumInfo(object):
             cursor.close()
             raise TargetNotFound( f'Nothing found at ({ra}, {dec})' )
         self._tiledata = pandas.DataFrame( result )
+        
+        # NOTE.  Sometimes there are multiple entries in the database
+        # with the same targetid, tileid, petal_loc, device_loc, and
+        # night!  expid varies (in at least the one case I've looked
+        # at).  I AM NOT SURE I'M DOING THE RIGHT THING.  Since I load
+        # cumulative data, I think I only want to keep one of these.
+        # (In any event, they will all come up with the same "filename",
+        # and the same spectrum will be read for all of them.)
+
+        self._tiledata = ( self._tiledata.groupby( ['targetid', 'tileid', 'petal_loc', 'device_loc'] )
+                           .aggregate('first').reset_index() )
         
         searchlist = []
         for targetid, tileid, night in zip( self._tiledata['targetid'],
@@ -224,6 +236,7 @@ class SpectrumInfo(object):
         
         One element in the list for each spectrum found in everest for that targetid.
         Each dict has z, zwar, deltachi2, filename, tileid, petal_loc, device_loc, night
+
         """
         subframe = self._tiledata[ self._tiledata['targetid'] == targetid ]
         retval = []
@@ -250,6 +263,8 @@ class SpectrumInfo(object):
         specinfo = self.info_for_targetid( targetid )
         spectra = []
         for spec in specinfo:
+            if not os.path.isfile( spec['filename'] ):
+                raise FileNotFoundError( f'File {spec["filename"]} doesn\'t exist' )
             threespectrums = desispec.io.spectra.read_spectra( spec['filename'] ).select( targets=[targetid] )
             # Combine B, R, Z into brz
             spectrum = desispec.coaddition.coadd_cameras( threespectrums )

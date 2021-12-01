@@ -208,15 +208,32 @@ class MostHostsDesi(object):
             row = mosthosts.iloc[i]
             if (i%1000 == 0):
                 self.logger.info( f'Did {i} of {len(mosthosts)}; {i-nhist[0]:d} have at least 1 match' )
-            q = ( "SELECT f.targetid,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2 FROM public.zbest_daily z "
+            q = ( "SELECT f.targetid,f.tileid,f.night,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2 "
+                  "FROM public.zbest_daily z "
                   "INNER JOIN public.fibermap_daily f ON (f.targetid,f.tileid,f.night)=(z.targetid,z.tile,z.yyyymmdd) "
                   "WHERE q3c_radial_query(f.fiber_ra,f.fiber_dec,%s,%s,1./3600)" )
             cursor.execute( q, ( row['ra'], row['dec'] ) )
-            matches = cursor.fetchall()
+            matches = pandas.DataFrame( cursor.fetchall() )
+            if len(matches) == 0:
+                for field in self.zpix_fields:
+                    newfields[f'zpix_{field}'].append( [] )
+                    newfields[f'zpix_nowarn_{field}'].append( [] )
+                nhist[0] += 1
+                nhistnowarn[0] += 1
+                continue
+
+            # NOTE.  Sometimes there are multiple entries in the
+            # fibermap_daily table with the same targetid, tileid, and
+            # night.  I AM NOT SURE I'M DOING THE RIGHT THING.  Since I
+            # load cumulative data in desi_specinfo.py, I think I only
+            # want to keep one of these.  (In any event, data kept here
+            # will be redundant if I keep more than one.)
+            matches = matches.groupby( ['targetid', 'tileid', 'night'] ).aggregate('first').reset_index()
+
             n = len(matches)
             for field in self.zpix_fields:
-                newfields[f'zpix_{field}'].append( [ match[field] for match in matches ] )
-                newfields[f'zpix_nowarn_{field}'].append( [ match[field] for match in matches if match['zwarn']==0 ] )
+                newfields[f'zpix_{field}'].append( [ val for val in matches[field] ] )
+                newfields[f'zpix_nowarn_{field}'].append( [ val for val in matches[ matches['zwarn']==0 ][field] ] )
             nnowarn = len(newfields['zpix_nowarn_targetid'][-1])
             if n >= 10:
                 nhist[10] += 1
