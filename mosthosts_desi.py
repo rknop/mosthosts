@@ -72,7 +72,7 @@ class MostHostsDesi(object):
     
     @property
     def haszdf( self ):
-        return self._haszdf
+        return self._df[ self._df['zpix_nowarn_targetid'].map(len) > 0 ]
     
     # ========================================
     
@@ -159,8 +159,9 @@ class MostHostsDesi(object):
             self.logger.warning( "Building mosthosts_desi.csv from database." )
             self.generate_df()
 
-         # Subset to objects with at least one redshift measurement
-        self._haszdf = self._df[ self._df['zpix_nowarn_targetid'].map(len) > 0 ]
+        # Subset to objects with at least one redshift measurement
+        # Make this when requested
+        # self._haszdf = self._df[ self._df['zpix_nowarn_targetid'].map(len) > 0 ]
 
     # ========================================
             
