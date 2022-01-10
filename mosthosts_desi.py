@@ -80,13 +80,16 @@ class MostHostsDesi(object):
     
     # ========================================
     
-    def __init__( self, force_regen=False, logger=None, dbuserpwfile=None, dbuser=None, dbpasswd=None ):
+    def __init__( self, release='daily', force_regen=False, logger=None,
+                  dbuserpwfile=None, dbuser=None, dbpasswd=None ):
         '''Build and return the a Pandas dataframe with info about Desi observation of mosthosts hosts.
         
         It matches by searching the daily tables by RA/Dec; things within 1" of the mosthosts host 
         coordinate are considered a match.
         
-        force_regen — by default, just reads "mosthosts_desi.csv" from the current directory.
+        release — everest or daily
+
+        force_regen — by default, just reads "mosthosts_desi_{release}.csv" from the current directory.
                       This is much faster, as the matching takes some time, but will fall
                       out of date.  Set force_regen to True to force it to rebuild that file
                       from the current contents of the database.  If the .csv file doesn't exist,
@@ -121,19 +124,20 @@ class MostHostsDesi(object):
         else:
             self._dbuserpwfile = dbuserpwfile
             
+        cwd = pathlib.Path( os.getcwd() )
+        csvfile = cwd / f"mosthosts_desi_{release}.csv"
+
         if force_regen:
             mustregen = True
         else:
-            # Try to read the mosthosts_desi.csv file
-            cwd = pathlib.Path( os.getcwd() )
-            csvfile = cwd / "mosthosts_desi.csv"
+            # Try to read the mosthosts_desi_{release}.csv file
             if csvfile.is_file():
                 converters = {}
                 for field in self.zpix_fields:
                     converters[ f'zpix_{field}' ] = ast.literal_eval
                     converters[ f'zpix_nowarn_{field}' ] = ast.literal_eval
                     converters[ 'dogshit' ] = ast.literal_eval
-                self.logger.info( f'Reading mosthosts_desi.csv' )
+                self.logger.info( f'Reading {csvfile.name}' )
                 self._df = pandas.read_csv( csvfile, converters = converters )
                 mustregen = False
                 # Verfiy we have the columns we expect
@@ -146,33 +150,39 @@ class MostHostsDesi(object):
                              'zpix_nowarn_deltachi2', 'z', 'dz', 'zdisp' ]:
                     if col not in self._df.columns:
                         logger.warning( f'(At least) {col} is missing from {csvfile.name}; regenerating.' )
+                        raise Exception( "...not doing that.  Delete the file manually." )
                         mustregen = True
                         break
                 if not mustregen:
                     self._df = self._df.set_index( ['spname', 'index' ] )
                     self._df = self._df.sort_index()
-                    self.logger.info( "Read mosthosts_desi.csv" )
+                    self.logger.info( f"Read {csvfile.name}" )
             else:
                 mustregen = True
 
         if mustregen:
-            self.logger.warning( "Building mosthosts_desi.csv from database." )
-            self.generate_df()
+            self.logger.warning( f"Building {csvfile.name} from database." )
+            self.generate_df( release )
 
         # Subset to objects with at least one redshift measurement
         # Make this when requested
         # self._haszdf = self._df[ self._df['zpix_nowarn_targetid'].map(len) > 0 ]
 
     # ========================================
-            
-    def generate_df( self ):
+
+    def connect_to_database( self ):
         if self._dbuser is None or self._dbpasswd is None:
             with open( self._dbuserpwfile ) as ifp:
                 (self._dbuser,self._dbpasswd) = ifp.readline().strip().split()
-            
+                
         dbconn = psycopg2.connect( dbname='desi', host='decatdb.lbl.gov',
                                    user=self._dbuser, password=self._dbpasswd,
                                    cursor_factory=psycopg2.extras.RealDictCursor )
+        return dbconn
+    
+    # ========================================
+
+    def load_mosthosts( self, dbconn ):
         cursor = dbconn.cursor()
         q = "SELECT * FROM mosthosts.mosthosts"
         cursor.execute( q )
@@ -196,25 +206,103 @@ class MostHostsDesi(object):
         mosthosts = mosthosts.set_index( ['snname', 'index' ] )
         mosthosts = mosthosts.sort_index()
 
+        cursor.close()
+        return mosthosts
+        
+        
+    # ========================================
+
+    def load_daily_host( self, row, dbconn ):
+        cursor = dbconn.cursor()
+        q = ( "SELECT f.targetid,f.tileid,f.night,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2 "
+              "FROM public.zbest_daily z "
+              "INNER JOIN public.fibermap_daily f ON (f.targetid,f.tileid,f.night)=(z.targetid,z.tile,z.yyyymmdd) "
+              "WHERE q3c_radial_query(f.fiber_ra,f.fiber_dec,%s,%s,1./3600)" )
+        cursor.execute( q, ( row['ra'], row['dec'] ) )
+        matches = pandas.DataFrame( cursor.fetchall() )
+        cursor.close()
+        return matches
+    
+    # ========================================
+
+    # def load_everest_host( self, row, dbconn ):
+    #     cursor = dbconn.cursor()
+    #     q = ( "SELECT z.targetid,z.tileid,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2 "
+    #           "FROM everest.ztile_cumulative_redshifts z "
+    #           "WHERE q3c_radial_query(z.target_ra,z.target_dec,%s,%s,1./3600) " )
+    #     self.logger.debug( f'Sending query: \"{cursor.mogrify( q, ( row["ra"], row["dec"] ) )}\"' )
+    #     cursor.execute( q, ( row["ra"], row["dec"] ) )
+    #     matches = pandas.DataFrame( cursor.fetchall() )
+    #     if len(matches) == 0:
+    #         matches['night'] = []
+    #         return matches
+
+    #     nights = []
+    #     for i, match in matches.iterrows():
+    #         q = ( "SELECT targetid,tileid,MAX(night) AS night "
+    #               "FROM everest.ztile_cumulative_fibermap "
+    #               "WHERE targetid=%s AND tileid=%s "
+    #               "GROUP BY targetid,tileid " )
+    #         self.logger.debug( f'Sending query: \"{cursor.mogrify( q, ( match["targetid"], match["tileid"]) )}\"' )
+    #         cursor.execute( q, ( match["targetid"], match["tileid"] ) )
+    #         tilenights = cursor.fetchall()
+    #         if len(tilenights) == 0:
+    #             self.logger.error( f'len(tilenights) = 0' )
+    #             nights.append("")
+    #         else:
+    #             if len(tilenights) > 1:
+    #                 self.logger.error( f'len(tileights) = {len(tilenights)}' )
+    #             tn = tilenights[0]
+    #             nights.append( tn['night'] )
+    #     matches['night'] = nights
+
+    #     return matches
+
+                              
+    def load_everest_host( self, row, dbconn ):
+        cursor = dbconn.cursor()
+        q = ( "SELECT z.targetid,z.tileid,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2,MAX(f.night) AS night "
+              "FROM everest.ztile_cumulative_redshifts z "
+              "INNER JOIN everest.ztile_cumulative_fibermap f "
+              "  ON (f.targetid,f.tileid)=(z.targetid,z.tileid) "
+              "WHERE q3c_radial_query(z.target_ra,z.target_dec,%s,%s,1./3600) "
+              "GROUP BY z.targetid,z.tileid,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2 "
+        )
+        self.logger.debug( f'Sending query: \"{cursor.mogrify( q, ( row["ra"], row["dec"] ) )}\"' )
+        cursor.execute( q, ( row["ra"], row["dec"] ) )
+        matches = pandas.DataFrame( cursor.fetchall() )
+        cursor.close()
+        return matches
+
+    # ========================================
+            
+    def generate_df( self, release ):
+        if release == 'daily':
+            hostloader = self.load_daily_host
+        elif release == 'everest':
+            hostloader = self.load_everest_host
+        else:
+            raise ValueError( f'Unknown release {release}' )
+
+
+        dbconn = self.connect_to_database()
+        self.logger.info( "Loading mosthosts table..." )
+        mosthosts = self.load_mosthosts( dbconn )
+        self.logger.info( "...mosthosts table loaded." )
+        
         # Add the fields that will have the desi spectrum info
         
         newfields = {}
         for field in self.zpix_fields:
             newfields[ f'zpix_{field}' ] = []
             newfields[ f'zpix_nowarn_{field}' ] = []
-
         nhist = np.zeros( 11, dtype=int )
         nhistnowarn = np.zeros( 11, dtype=int )
         for i in range(len(mosthosts)):
             row = mosthosts.iloc[i]
             if (i%1000 == 0):
                 self.logger.info( f'Did {i} of {len(mosthosts)}; {i-nhist[0]:d} have at least 1 match' )
-            q = ( "SELECT f.targetid,f.tileid,f.night,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2 "
-                  "FROM public.zbest_daily z "
-                  "INNER JOIN public.fibermap_daily f ON (f.targetid,f.tileid,f.night)=(z.targetid,z.tile,z.yyyymmdd) "
-                  "WHERE q3c_radial_query(f.fiber_ra,f.fiber_dec,%s,%s,1./3600)" )
-            cursor.execute( q, ( row['ra'], row['dec'] ) )
-            matches = pandas.DataFrame( cursor.fetchall() )
+            matches = hostloader( row, dbconn )
             if len(matches) == 0:
                 for field in self.zpix_fields:
                     newfields[f'zpix_{field}'].append( [] )
@@ -249,7 +337,6 @@ class MostHostsDesi(object):
             mosthosts[ f'zpix_{field}' ] = newfields[ f'zpix_{field}' ]
             mosthosts[ f'zpix_nowarn_{field}' ] = newfields[ f'zpix_nowarn_{field}' ]
 
-        cursor.close()
         dbconn.close()
 
         # Combine redshifts together
@@ -269,7 +356,7 @@ class MostHostsDesi(object):
                                     how='left', left_index=True, right_index=True )
 
         cwd = pathlib.Path( os.getcwd() )
-        csvfile = cwd / "mosthosts_desi.csv"
+        csvfile = cwd / f"mosthosts_desi_{release}.csv"
         self._df.to_csv( csvfile )
 
         self.logger.warning( f'File {csvfile.name} written (I hope).' )
@@ -277,7 +364,7 @@ class MostHostsDesi(object):
 # ======================================================================
 
 def main():
-    parser = argparse.ArgumentParser( "Generate/read mosthosts_desi.csv",
+    parser = argparse.ArgumentParser( "Generate/read mosthosts_desi_{release}.csv",
                                       description = ( "This is really intended to be used as a library. "
                                                       "See README.md: pandoc -t plain README.md | less" ) )
     parser.add_argument( "-f", "--dbuserpwfile", default=None,
@@ -288,6 +375,7 @@ def main():
     parser.add_argument( "-r", "--force-regen", default=False, action="store_true",
                          help=( "Force regeneration of mosthosts_desi.csv from the desi database "
                                 " (by default, just read mosthosts_dei.csv, and do nothing)" ) )
+    parser.add_argument( "release", help="Release to build the file for (everest or daily)" )
     args = parser.parse_args()
 
     if ( args.dbuserpwfile is None ) and ( args.dbuser is None or args.dbpasswd is None ):
@@ -295,7 +383,7 @@ def main():
         sys.exit(20)
 
     mhd = MostHostsDesi( dbuser=args.dbuser, dbpasswd=args.dbpasswd, dbuserpwfile=args.dbuserpwfile,
-                         force_regen=args.force_regen )
+                         force_regen=args.force_regen, release=args.release )
 
 # ======================================================================
 
