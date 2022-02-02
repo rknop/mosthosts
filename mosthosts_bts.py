@@ -1,12 +1,13 @@
 import os
 import sys
+import math
 import time
 import pandas
 
 from mosthosts_desi import MostHostsDesi
 
 def main():
-    mhd = MostHostsDesi()
+    mhd = MostHostsDesi( release="everest" )
     bts = pandas.read_csv( "bts_SNIa_qualcut_20211220.csv" )
 
     mhdztf = mhd.df[ mhd.df['snname'].apply( lambda x: x[0:3]=='ZTF' ) ]['snname'].unique()
@@ -36,11 +37,19 @@ def main():
     print( f'{nbts} BTS supernovae are in MostHosts and {nhaszbts} supernovae have at least one DESI redshift' )
         
     subdf = mhd.haszdf[ mhd.haszdf['inbts'] ]
-    print( f'{"ZTF SN":16s} Host# {"RA":8s}  {"Dec":7s}  {"Peak time":9s}    {"SN z":6s}   Host z' )
+    print( f'{"ZTF SN":16s} Host# {"RA":9s}  {"Dec":8s}  {"SN_RA":9s}  {"SN_Dec":9s}  '
+           f'{"Peak time":9s}    {"SN z":6s}   Host z' )
     for i, row in subdf.iterrows():
         peakt = float( bts[ bts["ZTFID"] == row["snname"] ]["peakt"] ) + 2458000
-        print( f'{row["snname"]:16s} {int(i[1]):2d}    {row["ra"]:8.4f} {row["dec"]:8.4f}  {peakt:10.2f}  '
-               f'{row["sn_z"]:7.4f}  {row["z"]:7.4f}' )
+        if math.fabs( row["sn_z"] - row["z"] ) > 0.05:
+            appendix = "*******"
+        elif math.fabs( row["sn_z"] - row["z"] ) > 0.01:
+            appendix = "**"
+        else:
+            appendix = ""
+        print( f'{row["snname"]:16s} {int(i[1]):2d}    {row["ra"]:8.5f} {row["dec"]:8.5f}  '
+               f'{row["sn_ra"]:8.5f}  {row["sn_dec"]:8.5f}  {peakt:10.2f}  '
+               f'{row["sn_z"]:7.4f}  {row["z"]:7.4f}  {appendix}' )
     
 # ======================================================================
 
