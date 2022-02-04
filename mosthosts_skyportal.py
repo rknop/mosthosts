@@ -26,47 +26,55 @@ class MostHostsSkyPortal:
     return checking built in.
 
     The df dataframe is by default cached in "skyportalcache.pkl" in the
-    local directory.  Call the instance's generate_df method with
-    regen=True to force this file to be regenerated.  (Takes a little
-    while — several minutes.)
+    local directory.  Of course, this means that the data you have might
+    be out of date from what's on the SkyPortal.  Call the instance's
+    generate_df method with regen=True to force this file to be
+    regenerated.  (Takes a little while — several minutes, as of Feb
+    2022 when there are ~15k candidates in MostHosts.)
 
     The dataframe is indexed by "id" (corresponds to object id on
     Skyportal and spname in the MostHostsDesi object from
     mosthosts_des.py).  It (probably) has columns (defined by SkyPortal):
 
-    ra
-    dec
-    ra_err
-    dec_err
-    ra_dis
-    dec_dis
-    redshift
-    redshift_error
-    redshift_history
-    gal_lon
-    gal_lat
-    luminosity_distance
-    dm
-    angular_diameter_distance
-    alias
-    classifications
-    annotations
-    transient
-    varstar
-    is_roid
-    score
-    altdata
-    origin
-    dist_nearest_source
-    mag_nearest_source
-    e_mag_nearest_source
-    detect_photometry_count
-    spectrum_exists
-    created_at
-    modified
-    internal_key
-    offset
-    groups
+        ra
+        dec
+        ra_err
+        dec_err
+        ra_dis
+        dec_dis
+        redshift
+        redshift_error
+        redshift_history
+        gal_lon
+        gal_lat
+        luminosity_distance
+        dm
+        angular_diameter_distance
+        alias
+        classifications
+        annotations
+        transient
+        varstar
+        is_roid
+        score
+        altdata
+        origin
+        dist_nearest_source
+        mag_nearest_source
+        e_mag_nearest_source
+        detect_photometry_count
+        spectrum_exists
+        created_at
+        modified
+        internal_key
+        offset
+        groups
+
+    Once you have this dataframe loaded, you can call the
+    spectra_for_obj(objid) method of your MostHostsSkyPortal instance to
+    get all the spectra for the object with id objid (which is the index
+    of pandas table found in the df property of your instance).
+
     """
     
     mosthosts_group_id = 36
@@ -82,7 +90,7 @@ class MostHostsSkyPortal:
             self.logger = logging.getLogger( "mhsp" )
             logerr = logging.StreamHandler( sys.stderr )
             self.logger.addHandler( logerr )
-            logerr.setFormatter( logging.Formatter( f'[%(asctime)s - %(levelname)s] = %(message)s' ) )
+            logerr.setFormatter( logging.Formatter( f'[%(asctime)s - %(levelname)s] - %(message)s' ) )
             self.logger.setLevel( logging.INFO )
         else:
             self.logger = logger

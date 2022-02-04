@@ -4,7 +4,7 @@ Libraries here include:
 
   * `mosthosts_desi.py` — for figuring out which Most Hosts objects have DESI observations
   * `desi_specinfo.py` — for actually getting the DESI spectrum of a Most Hosts host
-  * `mosthosts_skyporta.py` — link to the DESI SkyPortal
+  * `mosthosts_skyportal.py` — link to the DESI SkyPortal
 
 ## `mosthosts_desi.py` : Reading mosthosts and matching to DESI observations
 

@@ -1,6 +1,11 @@
 # This one requires the DESI environment to be set up, as it uses
 #  the desi libraries
 
+#### ROB TODO : if a host has spectra in the skyportal, and there are
+#### *new* spectra of that same host in daily, this code won't upload
+#### the new spectra!  Fix that.
+
+
 import sys
 import os
 import pickle
@@ -49,6 +54,9 @@ def upload_desi_spectrum( sn_id, index, night, spectrum, mhsp, instrument_id=Non
             raise ValueError( 'Must have just a single spectrum.' )
 
         # Deal with infinite errors
+        if ( spectrum.ivar['brz'] >  0 ).sum() == 0:
+            logger.error( f'Error for {sn_id} host {index} night {night}: spectrum is all 0 or negative!' )
+            return None
         tinyivar = min( spectrum.ivar['brz'][ spectrum.ivar['brz'] > 0 ] ) / 1000.
         error = np.sqrt( 1./spectrum.ivar['brz'][0,:] )
         error[ np.isinf(error) ] = math.sqrt( 1./tinyivar )
@@ -82,7 +90,7 @@ def main():
     logerr.setFormatter( logging.Formatter('[%(asctime)s - %(levelname)s] - %(message)s') )
     logger.setLevel(logging.INFO)
     
-    parser = argparse.ArgumentParser( "Do things.",
+    parser = argparse.ArgumentParser( "Try to update the Desi Skyportal Mosthosts group with DESI spectra.",
                                       description = ( "Be doing things." ) )
     parser.add_argument( "-f", "--dbuserpwfile", default=None,
                          help=( "File with one line (username password) for DESI database.  (Make sure this file "
@@ -101,6 +109,8 @@ def main():
                          help="Sleep time (seconds) between skyportal requests (default: 0.1)" )
     parser.add_argument( "--really-upload", default=False, action='store_true',
                          help="Include this to do things." )
+    parser.add_argument( "-c", "--candidates", default=[], nargs='*',
+                         help="Only do these candidates (\"skyportal\" name) (default: do all)" )
     args = parser.parse_args()
 
     if ( args.dbuserpwfile is None ) and ( args.dbuser is None or args.dbpasswd is None ):
@@ -112,11 +122,30 @@ def main():
         
     spapi = f'{args.skyportal_url}/api'
         
-    # Load in all the information about mosthosts spectra.
+    # Load in all the information about mosthosts spectra.  (Use the default release of "daily".)
 
     mosthosts = MostHostsDesi( dbuser=args.dbuser, dbpasswd=args.dbpasswd, dbuserpwfile=args.dbuserpwfile,
-                               force_regen=args.force_regen )
-    mhsp = MostHostsSkyPortal( token=args.skyportal_token )
+                               force_regen=args.force_regen, logger=logger )
+
+    if len(args.candidates) > 0:
+        # It's always hazardous using pandas, because there is lots of
+        # short formalism, but it's not obvious exactly what it does,
+        # especially in the case of multiple indexes.  What I'm trying
+        # to do here is select all hosts for the list of candidates.
+        # The fact that df.loc behaves differently if you pass it a
+        # tuple than if you pass it a list is a recipe for confusion!
+        # (From the pandas documentation: "Importantly, a list of tuples
+        # indexes several complete MultiIndex keys, whereas a tuple of
+        # lists refer to several values within a level."  So easy to
+        # imagine people getting that mixed up!
+        haszdf = mosthosts.haszdf.loc[ args.candidates ]
+        if len(haszdf) == 0:
+            raise RuntimeError( f'No lines left in list of MostHosts candidates with DESI redshifts after '
+                                f'limiting to {args.candidates}' )
+    else:
+        haszdf = mosthosts.haszdf
+    
+    mhsp = MostHostsSkyPortal( token=args.skyportal_token, logger=logger )
     instrument_id = mhsp.get_instrument_id('DESI')
     
     # Try to figure out which desi spectra are already uploaded
@@ -130,10 +159,11 @@ def main():
         
     curid = None
     numdid = 0
-    for mhdidx, mhdrow in mosthosts.haszdf.iterrows():
+    for mhdidx, mhdrow in haszdf.iterrows():
         if numdid % 100 == 0:
-            logger.info( f'Doing row {numdid} of {len(mosthosts.haszdf)} of spectra.' )
+            logger.info( f'***** Doing row {numdid} of {len(haszdf)} of hosts with spectra.' )
         numdid += 1
+        # mhdid is the current candidate id, mhddex is the host index of the candidate
         mhdid, mhddex = mhdidx
         mhddex = int(mhddex)          # Should already be int?
         if curid != mhdid:
@@ -145,8 +175,8 @@ def main():
         if mhdid not in specinfo:
             specinfo[mhdid] = {}
         if mhddex in specinfo[mhdid]:
-            logger.info( f'[cached] {mhdid} host {mhddex} already has uploaded spectra: '
-                         f'{", ".join( specinfo[mhdid][mhddex] )}' )
+            logger.info( f'[cached] {mhdid} host {mhddex} already has uploaded some spectra, '
+                         f'so not looking for more: {", ".join( specinfo[mhdid][mhddex] )}' )
         else:
             if curidspec is None:
                 time.sleep( args.sleep_time )
@@ -177,7 +207,7 @@ def main():
                         specs = si.get_spectra( targetid )
                         infos = si.info_for_targetid( targetid )
                     except Exception as e:
-                        logger.error( f'Filed to get spectra/info for targetid {targetid}, host {mhddex} of {mhdid}' )
+                        logger.error( f'Failed to get spectra/info for targetid {targetid}, host {mhddex} of {mhdid}' )
                         logger.error( f'Exception: {str(e)}' )
                         continue
                     for spec, info in zip( specs, infos ):
@@ -190,7 +220,9 @@ def main():
                                     if not mhddex in specinfo[mhdid]:
                                         specinfo[mhdid][mhddex] = []
                                     specinfo[mhdid][mhddex].append( label )
-                                    time.sleep( args.sleep_time )
+                                time.sleep( args.sleep_time )
+                            else:
+                                logger.warning( 'Not really uploading, didn\'t set --really-upload' )
                         except SpExc as e:
                             logger.error( f'Failed to upload spectrum, moving on: {str(e)}' )
                             time.sleep( args.sleep_time )

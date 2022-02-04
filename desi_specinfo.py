@@ -135,7 +135,7 @@ class SpectrumInfo(object):
         deltachi2s = []
         # Extremely irritating: pandas is converting all my int64s to float64s
         #   when I do iterrows().  Makes me think this isn't the right 
-        #   datastructure.  Work arond it with a big zip.
+        #   datastructure.  Work around it with a big zip.
         for tileid, night, petal_loc, targetid in zip( self._tiledata['tileid'], self._tiledata['night'],
                                                        self._tiledata['petal_loc'], self._tiledata['targetid'] ):
             # See A. Kim's notes; I think this may not be always right.
@@ -256,8 +256,13 @@ class SpectrumInfo(object):
         It returns a list because there might be multiple spectra for the same targetid.
 
         Each element of the list is a desispec.spectra.Spectra object
-        with just the singe target's spectrum.  The only element of
+        with just the single target's spectrum.  The only element of
         wave, flux, ivar should be 'brz', with the three combined.
+
+        Warning: if you use smooth other than 0, the spectrum variance
+        isn't really right (because of correlated errors; see comments
+        in code).  smooth=0 is always safer.
+
         """    
 
         specinfo = self.info_for_targetid( targetid )
