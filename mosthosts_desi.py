@@ -2,6 +2,7 @@ import os
 import sys
 import math
 import pathlib
+import pickle
 import logging
 import argparse
 import ast
@@ -13,12 +14,17 @@ import pandas
 # ======================================================================
 
 class MostHostsDesi(object):
-    '''Build and hold a Pandas dataframe with info about mosthosts objects with Desi observations.
+    '''Build and hold a two different Pandas dataframes with info about mosthosts objects with Desi observations.
     
     Build the dataframe by instantiating a MostHostsDesi object; see __init__ for more information.
+
+    In cases where the same targetid/tile/petal is repeated more than
+    once, just the values from the *latest* night are kept.
+
+
+    ALL MOSTHOSTS DATAFRAME:
     
-    Access the dataframe with the df property.  Alternatively, the haszdf property just has the
-    host entries with at least one DESI redshift with zwarn=0.
+    Access the dataframe with the df property.
     
     The dataframe has two indexes:
     
@@ -46,24 +52,51 @@ class MostHostsDesi(object):
     tns_name — Name of the SN on TNS
     iau_name — IAU name for the SN
     ptfiptf_name — Name from the Palomar Transient Factory for this SN
-    z — variance-weighted average of the nowarn DESI redshifts for this host, or -9999 if none
+
+    The remaining columns come from the DESI data, pulled from the tiles_redshifts and cumulative_tiles tables.
+
+    z — variance-weighted average of the nowarn DESI redshifts for this host, or null if none
     dz — uncertainty on z
     zdisp — Max-min of the individual z values observed for this host
     
-    Fields starting with zpix_ are from the zbest_daily and (for targetid) from the fibermap_daily
-    tables.  For each of these fields, there are also zpix_nowarn_ fields, which only include the
-    observations that had zwarn=0.  All of these fields are *lists* as there may be multiple
-    desi observations of the host.
-    
-    zpix_targetid — List of targetids for desi observations of this host (same targetid may be repeated)
-    zpix_z — List of redshifts for desi observations of host
-    zpix_zerr — List of redshift errors for desi observations of host
-    zpix_zwarn — List of zwarns (0=good) for desi observations of host
-    zpix_spectype — List of spectypes for desi observations of host
-    zpix_subtype — List of subtypes for desi observations of host
-    zpix_deltachi2 — List of deltachi2 for desi observations of host
-    
-    zpix_nowarn_* — one field corresponding to each zpix_ field.
+    If you want to drill into where this z came from, look at the haszdf table
+
+
+    DATAFRAME OF DESI OBSERVATIONS OF HOSTS
+
+    This one captures which hosts have been observed by DESI.  It does
+    not list each and every separate observation (as it uses DESI's
+    coadded spectra), but it does list separate obvations of hosts with
+    different tile and/or target ids.  (That is: DESI sometimes puts the
+    same RA/DEC into different targets and tiles.  This dataframe
+    doesn't combine them.  However, it read the DESI cumulative files,
+    so multiple observations tagged with the same tile and target for a
+    given host had their spectra combined before the redshifts was
+    measured.)
+
+    This dataframe omits MostHosts hosts that have no desi observations.
+
+    Access the dataframe with the haszdf property
+
+    This dataframe has *six* indices:
+
+    spname — same as from df
+    index — same as from df
+    targetid — targetid from the DESI database
+    tileid — tileid from the DESI database
+    petal — petal from the DESI database
+    night — night from the DESI database
+
+    Columns are the basic MostHosts columns from df, plus:
+
+    z — Redshift for this observation
+    zerr — Uncertainty on redshift for this observation
+    zwarn — If this isn't 0, you probably shouldn't trust the redshift
+    chi2 —
+    deltachi2 —
+    spectype —
+    subtype —
+
     '''
     
     @property
@@ -72,11 +105,7 @@ class MostHostsDesi(object):
     
     @property
     def haszdf( self ):
-        return self._df[ self._df['zpix_nowarn_targetid'].map(len) > 0 ]
-    
-    # ========================================
-    
-    zpix_fields = [ 'targetid', 'z', 'zerr', 'zwarn', 'spectype', 'subtype', 'deltachi2' ]
+        return self._haszdf
     
     # ========================================
     
@@ -126,47 +155,35 @@ class MostHostsDesi(object):
             
         cwd = pathlib.Path( os.getcwd() )
         csvfile = cwd / f"mosthosts_desi_{release}.csv"
+        pklfile = cwd / f"mosthosts_desi_{release}.pkl"
+        haszcsvfile = cwd / f"mosthosts_desi_{release}_desiobs.csv"
+        haszpklfile = cwd / f"mosthosts_desi_{release}_desiobs.pkl"
 
         if force_regen:
             mustregen = True
         else:
-            # Try to read the mosthosts_desi_{release}.csv file
-            if csvfile.is_file():
-                converters = {}
-                for field in self.zpix_fields:
-                    converters[ f'zpix_{field}' ] = ast.literal_eval
-                    converters[ f'zpix_nowarn_{field}' ] = ast.literal_eval
-                    converters[ 'dogshit' ] = ast.literal_eval
-                self.logger.info( f'Reading {csvfile.name}' )
-                self._df = pandas.read_csv( csvfile, converters = converters )
-                mustregen = False
-                # Verfiy we have the columns we expect
-                self.logger.info( f'Checking...' )
-                for col in [ 'spname', 'snname', 'ra', 'dec', 'pmra', 'pmdec', 'ref_epoch', 'override', 'index',
-                             'hemisphere', 'sn_ra', 'sn_dec', 'sn_z', 'program', 'priority', 'tns_name', 'iau_name',
-                             'ptfiptf_name', 'zpix_targetid', 'zpix_nowarn_targetid', 'zpix_z', 'zpix_nowarn_z',
-                             'zpix_zerr', 'zpix_nowarn_zerr', 'zpix_zwarn', 'zpix_nowarn_zwarn', 'zpix_spectype',
-                             'zpix_nowarn_spectype', 'zpix_subtype', 'zpix_nowarn_subtype', 'zpix_deltachi2',
-                             'zpix_nowarn_deltachi2', 'z', 'dz', 'zdisp' ]:
-                    if col not in self._df.columns:
-                        logger.warning( f'(At least) {col} is missing from {csvfile.name}; regenerating.' )
-                        raise Exception( "...not doing that.  Delete the file manually." )
-                        mustregen = True
-                        break
-                if not mustregen:
-                    self._df = self._df.set_index( ['spname', 'index' ] )
-                    self._df = self._df.sort_index()
-                    self.logger.info( f"Read {csvfile.name}" )
+            # Try to read what already exists; also make sure the csv files exist
+            if csvfile.is_file() and pklfile.is_file() and haszcsvfile.is_file() and haszpklfile.is_file():
+                with open( pklfile, "rb" ) as ifp:
+                    self._df = pickle.load( ifp )
+                with open( haszpklfile, "rb" ) as ifp:
+                    self._haszdf = pickle.load( ifp )
+                self.logger.info( "Read dataframes from pkl files" )
             else:
                 mustregen = True
 
         if mustregen:
-            self.logger.warning( f"Building {csvfile.name} from database." )
+            self.logger.warning( f"Building {csvfile.name} and {haszcsvfile.name} from database." )
             self.generate_df( release )
 
-        # Subset to objects with at least one redshift measurement
-        # Make this when requested
-        # self._haszdf = self._df[ self._df['zpix_nowarn_targetid'].map(len) > 0 ]
+            with open( pklfile, "wb" ) as ofp:
+                pickle.dump( self._df, ofp )
+            with open( haszpklfile, "wb") as ofp:
+                pickle.dump( self._haszdf, ofp )
+            self._df.to_csv( csvfile )
+            self._haszdf.to_csv( haszcsvfile )
+
+            self.logger.info( f"{csvfile.name} and {haszcsvfile.name} written." )
 
     # ========================================
 
@@ -175,7 +192,7 @@ class MostHostsDesi(object):
             with open( self._dbuserpwfile ) as ifp:
                 (self._dbuser,self._dbpasswd) = ifp.readline().strip().split()
                 
-        dbconn = psycopg2.connect( dbname='desi', host='decatdb.lbl.gov',
+        dbconn = psycopg2.connect( dbname='desidb', host='decatdb.lbl.gov',
                                    user=self._dbuser, password=self._dbpasswd,
                                    cursor_factory=psycopg2.extras.RealDictCursor )
         return dbconn
@@ -184,7 +201,7 @@ class MostHostsDesi(object):
 
     def load_mosthosts( self, dbconn ):
         cursor = dbconn.cursor()
-        q = "SELECT * FROM mosthosts.mosthosts"
+        q = "SELECT * FROM static.mosthosts"
         cursor.execute( q )
         mosthosts = pandas.DataFrame( cursor.fetchall() )
 
@@ -200,9 +217,11 @@ class MostHostsDesi(object):
                 return row['snname']
         spname = mosthosts.apply( get_spname, axis=1 )
         mosthosts['spname'] = spname
-            
+
+        # Change type of index to pandas Int64 so that it can be nullable
+        mosthosts['index'] = mosthosts['index'].astype('Int64')
+
         # # Add a column that indexes the hosts for that one supernova, and then rearrange the table
-        # mosthosts.insert( loc=0, column='snhostnum', value=mosthosts.groupby( 'snname' ).cumcount() )
         mosthosts = mosthosts.set_index( ['snname', 'index' ] )
         mosthosts = mosthosts.sort_index()
 
@@ -211,156 +230,83 @@ class MostHostsDesi(object):
         
         
     # ========================================
-
-    def load_daily_host( self, row, dbconn ):
-        cursor = dbconn.cursor()
-        q = ( "SELECT f.targetid,f.tileid,f.night,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2 "
-              "FROM public.zbest_daily z "
-              "INNER JOIN public.fibermap_daily f ON (f.targetid,f.tileid,f.night)=(z.targetid,z.tile,z.yyyymmdd) "
-              "WHERE q3c_radial_query(f.fiber_ra,f.fiber_dec,%s,%s,1./3600)" )
-        cursor.execute( q, ( row['ra'], row['dec'] ) )
-        matches = pandas.DataFrame( cursor.fetchall() )
-        cursor.close()
-        return matches
-    
-    # ========================================
-
-    # def load_everest_host( self, row, dbconn ):
-    #     cursor = dbconn.cursor()
-    #     q = ( "SELECT z.targetid,z.tileid,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2 "
-    #           "FROM everest.ztile_cumulative_redshifts z "
-    #           "WHERE q3c_radial_query(z.target_ra,z.target_dec,%s,%s,1./3600) " )
-    #     self.logger.debug( f'Sending query: \"{cursor.mogrify( q, ( row["ra"], row["dec"] ) )}\"' )
-    #     cursor.execute( q, ( row["ra"], row["dec"] ) )
-    #     matches = pandas.DataFrame( cursor.fetchall() )
-    #     if len(matches) == 0:
-    #         matches['night'] = []
-    #         return matches
-
-    #     nights = []
-    #     for i, match in matches.iterrows():
-    #         q = ( "SELECT targetid,tileid,MAX(night) AS night "
-    #               "FROM everest.ztile_cumulative_fibermap "
-    #               "WHERE targetid=%s AND tileid=%s "
-    #               "GROUP BY targetid,tileid " )
-    #         self.logger.debug( f'Sending query: \"{cursor.mogrify( q, ( match["targetid"], match["tileid"]) )}\"' )
-    #         cursor.execute( q, ( match["targetid"], match["tileid"] ) )
-    #         tilenights = cursor.fetchall()
-    #         if len(tilenights) == 0:
-    #             self.logger.error( f'len(tilenights) = 0' )
-    #             nights.append("")
-    #         else:
-    #             if len(tilenights) > 1:
-    #                 self.logger.error( f'len(tileights) = {len(tilenights)}' )
-    #             tn = tilenights[0]
-    #             nights.append( tn['night'] )
-    #     matches['night'] = nights
-
-    #     return matches
-
-                              
-    def load_everest_host( self, row, dbconn ):
-        cursor = dbconn.cursor()
-        q = ( "SELECT z.targetid,z.tileid,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2,MAX(f.night) AS night "
-              "FROM everest.ztile_cumulative_redshifts z "
-              "INNER JOIN everest.ztile_cumulative_fibermap f "
-              "  ON (f.targetid,f.tileid)=(z.targetid,z.tileid) "
-              "WHERE q3c_radial_query(z.target_ra,z.target_dec,%s,%s,1./3600) "
-              "GROUP BY z.targetid,z.tileid,z.z,z.zerr,z.zwarn,z.spectype,z.subtype,z.deltachi2 "
-        )
-        self.logger.debug( f'Sending query: \"{cursor.mogrify( q, ( row["ra"], row["dec"] ) )}\"' )
-        cursor.execute( q, ( row["ra"], row["dec"] ) )
-        matches = pandas.DataFrame( cursor.fetchall() )
-        cursor.close()
-        return matches
-
-    # ========================================
             
     def generate_df( self, release ):
-        if release == 'daily':
-            hostloader = self.load_daily_host
-        elif release == 'everest':
-            hostloader = self.load_everest_host
-        else:
-            raise ValueError( f'Unknown release {release}' )
-
-
         dbconn = self.connect_to_database()
         self.logger.info( "Loading mosthosts table..." )
-        mosthosts = self.load_mosthosts( dbconn )
+        self._mosthosts = self.load_mosthosts( dbconn )
         self.logger.info( "...mosthosts table loaded." )
+
+        # Get the dataframe of information from the desi tables
+
+        desidf = None
+
+        nhavesome = 0
+        nredshifts = 0
+        for i in range(len(self._mosthosts)):
+            if (i%1000) == 0:
+                self.logger.info( f'Done {i} of {len(self._mosthosts)} hosts; '
+                                  f'{nhavesome} hosts have redshifts, found a total of {nredshifts} redshifts' )
+            ra = self._mosthosts['ra'][i]
+            dec = self._mosthosts['dec'][i]
+
+            cursor = dbconn.cursor()
+            q = ( f"SELECT c.tileid,c.petal,c.night,r.targetid,r.z,r.zerr,r.zwarn,"
+                  f"r.chi2,r.deltachi2,r.spectype,r.subtype "
+                  f"FROM {release}.cumulative_tiles c "
+                  f"INNER JOIN {release}.tiles_redshifts r ON r.cumultile_id=c.id "
+                  f"INNER JOIN {release}.tiles_fibermap f ON f.cumultile_id=c.id AND f.targetid=r.targetid "
+                  f"WHERE q3c_radial_query(f.target_ra,f.target_dec,%(ra)s,%(dec)s,%(radius)s) "
+                  f"ORDER BY night" )
+            cursor.execute( q, { "ra": ra, "dec": dec, "radius": 1./3600. } )
+            rows = cursor.fetchall()
+            if len(rows) > 0:
+                nhavesome += 1
+                nredshifts += len(rows)
+                newdf = pandas.DataFrame(rows)
+                newdf['snname'] = self._mosthosts.index.get_level_values("snname")[i]
+                newdf['index'] = self._mosthosts.index.get_level_values("index")[i]
+                if desidf is None:
+                    desidf = newdf
+                else:
+                    desidf = pandas.concat( [ desidf, newdf ] )
+
+        # We have to muck with datatypes so that they can be nullable, otherwise
+        #   integers will get converted to floats and we'll lose information.
+
+        intfields = ( 'tileid', 'petal', 'night', 'targetid' )
+        for field in intfields:
+            desidf[field] = desidf[field].astype('Int64')
+
+        # Merge the dsi information into mosthosxts to make _fulldf
+                    
+        desidf.set_index( [ 'snname', 'index' ], inplace=True )
+        self._fulldf = pandas.merge( self._mosthosts, desidf, how='left',
+                                     left_index=True, right_index=True, copy=True )
+        self._fulldf.reset_index( inplace=True )
+
+        # _haszdf has all information about redshifts in desi
         
-        # Add the fields that will have the desi spectrum info
-        
-        newfields = {}
-        for field in self.zpix_fields:
-            newfields[ f'zpix_{field}' ] = []
-            newfields[ f'zpix_nowarn_{field}' ] = []
-        nhist = np.zeros( 11, dtype=int )
-        nhistnowarn = np.zeros( 11, dtype=int )
-        for i in range(len(mosthosts)):
-            row = mosthosts.iloc[i]
-            if (i%1000 == 0):
-                self.logger.info( f'Did {i} of {len(mosthosts)}; {i-nhist[0]:d} have at least 1 match' )
-            matches = hostloader( row, dbconn )
-            if len(matches) == 0:
-                for field in self.zpix_fields:
-                    newfields[f'zpix_{field}'].append( [] )
-                    newfields[f'zpix_nowarn_{field}'].append( [] )
-                nhist[0] += 1
-                nhistnowarn[0] += 1
-                continue
+        self._haszdf = self._fulldf[ self._fulldf['z'].notnull() ].copy()
+        self._haszdf.set_index( ['snname', 'index', 'targetid', 'tileid', 'petal', 'night'], inplace=True )
 
-            # NOTE.  Sometimes there are multiple entries in the
-            # fibermap_daily table with the same targetid, tileid, and
-            # night.  I AM NOT SURE I'M DOING THE RIGHT THING.  Since I
-            # load cumulative data in desi_specinfo.py, I think I only
-            # want to keep one of these.  (In any event, data kept here
-            # will be redundant if I keep more than one.)
-            matches = matches.groupby( ['targetid', 'tileid', 'night'] ).aggregate('first').reset_index()
+        # _df has combined information
 
-            n = len(matches)
-            for field in self.zpix_fields:
-                newfields[f'zpix_{field}'].append( [ val for val in matches[field] ] )
-                newfields[f'zpix_nowarn_{field}'].append( [ val for val in matches[ matches['zwarn']==0 ][field] ] )
-            nnowarn = len(newfields['zpix_nowarn_targetid'][-1])
-            if n >= 10:
-                nhist[10] += 1
-            else:
-                nhist[n] += 1
-            if nnowarn >= 10:
-                nhistnowarn[10] += 1
-            else:
-                nhistnowarn[nnowarn] += 1
+        subdf = self._fulldf[ ( self._fulldf['z'].notnull() ) & ( self._fulldf['zwarn'] == 0 ) ]
+        def zcomb( row ):
+            norm = ( 1. / row['zerr']**2 ).sum()
+            row['zdisp'] = row['z'].max() - row['z'].min()
+            row['z'] = ( row['z'] / row['zerr']**2 ).sum() / norm
+            row['zerr'] = np.sqrt( 1. / norm )
+            return row.iloc[0]
+        subdf = subdf.groupby( ['snname','index'] ).apply( zcomb )
+        subdf = subdf.set_index( ['snname', 'index'] )[ [ 'z', 'zerr', 'zdisp' ] ]
 
-        for field in self.zpix_fields:
-            mosthosts[ f'zpix_{field}' ] = newfields[ f'zpix_{field}' ]
-            mosthosts[ f'zpix_nowarn_{field}' ] = newfields[ f'zpix_nowarn_{field}' ]
+        self._df = pandas.merge( self._mosthosts, subdf, how='left', left_index=True, right_index=True, copy=True )
 
+        self.logger.info( f"Done generating dataframes." )
         dbconn.close()
-
-        # Combine redshifts together
-
-        def combinez( row ):
-            if len(row['zpix_nowarn_z']) == 0:
-                return { 'z': -9999, 'dz': 0, 'zdisp': 0 }
-            hostzs = np.array( row['zpix_nowarn_z'] )
-            hostzerrs = np.array( row['zpix_nowarn_zerr'] )
-            z = ( hostzs / hostzerrs**2 ).sum() / ( 1. / hostzerrs**2 ).sum()
-            dz = 1. / math.sqrt( (1. / hostzerrs**2).sum() )
-            return { 'z': z, 'dz': dz, 'zdisp': hostzs.max()-hostzs.min() }
-
-        hostzvals = mosthosts.apply( combinez, axis=1, result_type='expand' )
-
-        self._df = mosthosts.merge( hostzvals,
-                                    how='left', left_index=True, right_index=True )
-
-        cwd = pathlib.Path( os.getcwd() )
-        csvfile = cwd / f"mosthosts_desi_{release}.csv"
-        self._df.to_csv( csvfile )
-
-        self.logger.warning( f'File {csvfile.name} written (I hope).' )
-
+        
 # ======================================================================
 
 def main():
