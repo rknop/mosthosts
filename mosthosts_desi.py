@@ -113,27 +113,40 @@ class MostHostsDesi(object):
                   dbuserpwfile=None, dbuser=None, dbpasswd=None ):
         '''Build and return the a Pandas dataframe with info about Desi observation of mosthosts hosts.
         
-        It matches by searching the daily tables by RA/Dec; things within 1" of the mosthosts host 
-        coordinate are considered a match.
+        It matches by searching the daily tables by RA/Dec; things
+        within 1" of the mosthosts host coordinate are considered a
+        match.
         
-        release — everest or daily
+        release — One of daily, everest, fuji, guadalupe, or fujilupe
+                  The DESI release to get info for.  "Daily" looks at
+                  the regularly updated databse of what's been done.
+                  fujilupe is a special case that combines together fuji
+                  and guadalipe into a single dataframe.
 
-        force_regen — by default, just reads "mosthosts_desi_{release}.csv" from the current directory.
-                      This is much faster, as the matching takes some time, but will fall
-                      out of date.  Set force_regen to True to force it to rebuild that file
-                      from the current contents of the database.  If the .csv file doesn't exist,
-                      or doesn't have all the expected columns, it will be regenerated from the
-                      database even if force_regen is False.
+        force_regen — by default, just reads
+                      "mosthosts_desi_{release}.csv" from the current
+                      directory.  This is much faster, as the matching
+                      takes some time, but will fall out of date.  Set
+                      force_regen to True to force it to rebuild that
+                      file from the current contents of the database.
+                      If the .csv file doesn't exist, or doesn't have
+                      all the expected columns, it will be regenerated
+                      from the database even if force_regen is False.
                       
-        dbuserpwfile — A file that has a single line with two words separated by a single space.
-                       The first is the username for connecting to the desi database, the second
-                       is the password.  This file should be kept somewhere in your account that
-                       is *not* world-readable.  Defaults to something in Rob's directory that you
-                       can't read....
+        dbuserpwfile — A file that has a single line with two words
+                       separated by a single space.  The first is the
+                       username for connecting to the desi database, the
+                       second is the password.  This file should be kept
+                       somewhere in your account that is *not*
+                       world-readable.  Defaults to something in Rob's
+                       directory that you can't read....
                        
-        dbuser, dbpasswd — Instead of using a dbuserpwfile, you can just pass the database user and
-                           password directly.  Be careful!  Don't leave this password sitting around
-                           in files that are accessible by people outside of the DESI collaboration!
+        dbuser, dbpasswd — Instead of using a dbuserpwfile, you can just
+                           pass the database user and password directly.
+                           Be careful!  Don't leave this password
+                           sitting around in files that are accessible
+                           by people outside of the DESI collaboration!
+
         '''
 
         if logger is None:
@@ -159,6 +172,13 @@ class MostHostsDesi(object):
         haszcsvfile = cwd / f"mosthosts_desi_{release}_desiobs.csv"
         haszpklfile = cwd / f"mosthosts_desi_{release}_desiobs.pkl"
 
+        dbconn = self.connect_to_database()
+        self.logger.info( "Loading mosthosts table..." )
+        self._mosthosts = self.load_mosthosts( dbconn )
+        self.logger.info( "...mosthosts table loaded." )
+        dbconn.close()
+
+        mustregen = False
         if force_regen:
             mustregen = True
         else:
@@ -173,7 +193,50 @@ class MostHostsDesi(object):
                 mustregen = True
 
         if mustregen:
-            self.logger.warning( f"Building {csvfile.name} and {haszcsvfile.name} from database." )
+            # self.logger.warning( f"Building {csvfile.name} and {haszcsvfile.name} from database." )
+
+            # if release == "fujilupe":
+            #     self.logger.info( "=== Loading Fuji Information ===" )
+            #     self.generate_df( "fuji" )
+            #     _fujifulldf = self._fulldf
+            #     _fujihaszdf = self._haszdf
+            #     _fujidf = self._df
+            #     self.logger.info( "=== Loading Guadalupe Information ===" )
+            #     self.generate_df( "guadalupe" )
+            #     self.logger.info( "=== Merging Fuji and Guadalupe ===" )
+            #     # ****
+            #     self._fujifulldf = _fujifulldf
+            #     self._fujihaszdf = _fujihaszdf
+            #     self._fujidf = _fujidf
+            #     self._guadalupefulldf = self._fulldf
+            #     self._guadalupehaszdf = self._haszdf.copy()
+            #     self._guadalupedf = self._df.copy()
+            #     # ****
+            #     self._fulldf = None
+            #     intersec = _fujihaszdf.index.intersection( self._haszdf.index )
+            #     if len(intersec) > 0:
+            #         self.logger.error( f"Repeated indices in fuji and guadalupe: {intersec}" )
+            #     self._haszdf = pandas.concat( [ _fujihaszdf, self._haszdf ] )
+            #     # This one is more complicated;
+            #     #  I haven't figured out if there's a pandas merge function
+            #     #  that does what I want here.
+            #     # I know that the _df dataframes will have exactly the same
+            #     #  rows in the same order.
+            #     for i in range(len(_fujidf)):
+            #         if pandas.isna( self._df.iloc[i].z ):
+            #             if not pandas.isna( _fujidf.iloc[i].z ):
+            #                 dex = self._df.iloc[i].name
+            #                 # self.logger.debug( f'Importing {dex} from fuji' )
+            #                 # Pandas is loaded with lots of non-intuitive stuff
+            #                 # self._df.iloc[i].z = ... didn't work, had to use "at"
+            #                 self._df.at[dex, 'z'] = _fujidf.iloc[i].z
+            #                 self._df.at[dex, 'zdisp'] = _fujidf.iloc[i].zdisp
+            #                 self._df.at[dex, 'zerr'] = _fujidf.iloc[i].zerr
+            #         else:
+            #             if not pandas.isna( _fujidf.iloc[i].z ):
+            #                 self.logger.warning( f'Row {self._df.iloc[i].name} has redshifts from both '
+            #                                      f'fuji and guadalupe; using just the latter in df' )
+            # else:
             self.generate_df( release )
 
             with open( pklfile, "wb" ) as ofp:
@@ -232,18 +295,15 @@ class MostHostsDesi(object):
     # ========================================
             
     def generate_df( self, release ):
-        dbconn = self.connect_to_database()
-        self.logger.info( "Loading mosthosts table..." )
-        self._mosthosts = self.load_mosthosts( dbconn )
-        self.logger.info( "...mosthosts table loaded." )
-
         # Get the dataframe of information from the desi tables
 
+        dbconn = self.connect_to_database()
         desidf = None
 
         nhavesome = 0
         nredshifts = 0
         for i in range(len(self._mosthosts)):
+        # for i in range(1000):
             if (i%1000) == 0:
                 self.logger.info( f'Done {i} of {len(self._mosthosts)} hosts; '
                                   f'{nhavesome} hosts have redshifts, found a total of {nredshifts} redshifts' )
@@ -251,13 +311,22 @@ class MostHostsDesi(object):
             dec = self._mosthosts['dec'][i]
 
             cursor = dbconn.cursor()
-            q = ( f"SELECT c.tileid,c.petal,c.night,r.targetid,r.z,r.zerr,r.zwarn,"
-                  f"r.chi2,r.deltachi2,r.spectype,r.subtype "
-                  f"FROM {release}.cumulative_tiles c "
-                  f"INNER JOIN {release}.tiles_redshifts r ON r.cumultile_id=c.id "
-                  f"INNER JOIN {release}.tiles_fibermap f ON f.cumultile_id=c.id AND f.targetid=r.targetid "
-                  f"WHERE q3c_radial_query(f.target_ra,f.target_dec,%(ra)s,%(dec)s,%(radius)s) "
-                  f"ORDER BY night" )
+            qbase = ( "SELECT c.tileid,c.petal,c.night,r.targetid,r.z,r.zerr,r.zwarn,"
+                      "r.chi2,r.deltachi2,r.spectype,r.subtype "
+                      "FROM {release}.cumulative_tiles c "
+                      "INNER JOIN {release}.tiles_redshifts r ON r.cumultile_id=c.id "
+                      "INNER JOIN {release}.tiles_fibermap f ON f.cumultile_id=c.id AND f.targetid=r.targetid "
+                      "WHERE q3c_radial_query(f.target_ra,f.target_dec,%(ra)s,%(dec)s,%(radius)s) " )
+            # HACK ALERT
+            if release == "fujilupe":
+                qf = qbase.replace( "{release}", "fuji" )
+                qg = qbase.replace( "{release}", "guadalupe" )
+                q = f"({qf}) UNION ({qg}) ORDER BY night"
+            else:
+                if release not in ( 'daily', 'everest', 'fuji', 'guadalupe' ):
+                    raise ValueError( f'Unknown release {release}' )
+                q = qbase.replace( "{release}", release )
+                q += " ORDER BY night"
             cursor.execute( q, { "ra": ra, "dec": dec, "radius": 1./3600. } )
             rows = cursor.fetchall()
             if len(rows) > 0:
