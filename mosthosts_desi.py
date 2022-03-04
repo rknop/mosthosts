@@ -24,7 +24,7 @@ _mhdlogger.setLevel( logging.INFO )
 class MostHostsDesi(object):
     '''Build and hold a two different Pandas dataframes with info about mosthosts objects with Desi observations.
     
-    Build the dataframe by instantiating a MostHostsDesi object; see __init__ for more information.
+    Build the dataframes by instantiating a MostHostsDesi object; see __init__ for more information.
 
     In cases where the same targetid/tile/petal is repeated more than
     once, just the values from the *latest* night are kept.

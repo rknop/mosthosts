@@ -40,7 +40,7 @@ class TargetNotFound(Exception):
 class SpectrumInfo(object):
     """Make one of these to find all desi spectra within 1" of ra/dec.
     
-    Pass collection = "everest" or "daily"
+    Pass collection = daily, everest, fuji, or guadalupe  ("fujilupe" isn't currently supported)
     
     Then look at targetids to get a set of targetids that have spectra in everest at this ra/dec,
     and run the info_for_targetid(targetid) method to get a list of dicts with info about the spectra.
