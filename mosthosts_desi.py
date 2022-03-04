@@ -11,6 +11,14 @@ import psycopg2.extras
 import numpy as np
 import pandas
 
+
+_mhdlogger = logging.getLogger( "mosthosts_desi" )
+_logout = logging.StreamHandler( sys.stderr )
+_mhdlogger.addHandler( _logout )
+_logout.setFormatter( logging.Formatter( f'[%(asctime)s - %(levelname)s] - %(message)s' ) )
+_mhdlogger.setLevel( logging.INFO )
+# _mhdlogger.setLevel( logging.DEBUG )
+
 # ======================================================================
 
 class MostHostsDesi(object):
@@ -148,16 +156,8 @@ class MostHostsDesi(object):
                            by people outside of the DESI collaboration!
 
         '''
-
-        if logger is None:
-            self.logger = logging.getLogger( "mhd" )
-            logout = logging.StreamHandler( sys.stderr )
-            self.logger.addHandler( logout )
-            logout.setFormatter( logging.Formatter( f'[%(asctime)s - %(levelname)s] - %(message)s' ) )
-            self.logger.setLevel( logging.INFO )
-            # self.logger.setLevel( logging.DEBUG )
-        else:
-            self.logger = logger
+        global _mhdlogger
+        self.logger = _mhdlogger if logger is None else logger
 
         self._dbuser = dbuser
         self._dbpasswd = dbpasswd
