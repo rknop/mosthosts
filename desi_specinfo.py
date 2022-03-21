@@ -121,6 +121,7 @@ class SpectrumInfo(object):
         self._tiledata = self._tiledata.loc[ self._tiledata.groupby( [ 'targetid', 'tileid', 'petal_loc' ] )
                                              ['night'].idxmax() ]
         self._targetids = set( self._tiledata.targetid.values )
+        self._tiledata.set_index( [ 'targetid', 'tileid', 'petal_loc', 'night' ], inplace=True )
         cursor.close()
 
     @property
@@ -132,10 +133,10 @@ class SpectrumInfo(object):
         """Returns a list of dicts.
         
         One element in the list for each spectrum found in everest for that targetid.
-        Each dict has z, zwar, deltachi2, filename, tileid, petal_loc, device_loc, night
+        Each dict has z, zwarn, deltachi2, filename, tileid, petal_loc, device_loc, night
 
         """
-        subframe = self._tiledata[ self._tiledata['targetid'] == targetid ]
+        subframe = self._tiledata.xs( targetid, level=0 ).reset_index()
         retval = []
         for tup in subframe.itertuples():
             row = tup._asdict()
@@ -166,26 +167,48 @@ class SpectrumInfo(object):
         specinfo = self.info_for_targetid( targetid )
         spectra = []
         for spec in specinfo:
-            match = self.nameparse.search( spec['filename'] )
-            if match is None:
-                raise ValueError( f'Error parsing filename {spec["filename"]}' )
-            filepath = self.BASE_DIR / match.group(1) / f"coadd{match.group(3)}"
-            if not filepath.is_file():
-                raise FileNotFoundError( f'File {spec["filename"]} doesn\'t exist' )
-            threespectrums = desispec.io.spectra.read_spectra( filepath ).select( targets=[targetid] )
-            # Combine B, R, Z into brz
-            spectrum = desispec.coaddition.coadd_cameras( threespectrums )
-
-            if smooth > 0:
-                spectrum.flux['brz'][0,:] = scipy.ndimage.gaussian_filter1d( spectrum.flux['brz'][0,:], smooth )
-                # This isn't the right thing to do!  Two problems
-                # 1. correlated errors.  This is thorny, and requires new data structures
-                # 2. Really, var[i,:] = sum( k(n)² var(i+n), n=-N..N )
-                #       where k(n) is the kernel that has half-width N
-                #    ...but this is only of limited meaning because of course the correlated
-                #    errors are huge.
-                # On the other hand, this WILL give you a feeling for the noise level
-                # in the original spectrum, which is maybe what we want.
-                spectrum.ivar['brz'][0,:] = scipy.ndimage.gaussian_filter1d( spectrum.ivar['brz'][0,:], smooth )
-            spectra.append( spectrum )
+            spectra.append( self.get_spectrum( targetid, spec['tileid'], spec['petal_loc'], spec['night'] ) )
         return spectra
+
+    def get_spectrum( self, targetid, tile, petal, night, smooth=0 ):
+        """Returns a desispec.spectra.Spectra object for the specified target/tile/petal/night.
+        
+        You get the coadded cumulative spectrum.
+
+        The only element of wave, flux, ivar should be 'brz', with the
+        three combined.
+
+        Warning: if you use smooth other than 0, the spectrum variance
+        isn't really right (because of correlated errors; see comments
+        in code).  smooth=0 is always safer.
+
+        """
+        try:
+            row = self._tiledata.loc[ targetid, tile, petal, night ]
+        except KeyError as e:
+            # import pdb; pdb.set_trace()
+            raise TargetNotFound( f'No spectrum for target {targetid}, tile {tile}, petal {petal}, night {night}' )
+
+        match = self.nameparse.search( row["filename"] )
+        if match is None:
+            raise ValueError( f'Error parsing filename {spec["filename"]}' )
+        filepath = self.BASE_DIR / match.group(1) / f"coadd{match.group(3)}"
+        if not filepath.is_file():
+            raise FileNotFoundError( f'File {spec["filename"]} doesn\'t exist' )
+        threespectrums = desispec.io.spectra.read_spectra( filepath ).select( targets=[targetid] )
+        # Combine B, R, Z into brz
+        spectrum = desispec.coaddition.coadd_cameras( threespectrums )
+
+        if smooth > 0:
+            spectrum.flux['brz'][0,:] = scipy.ndimage.gaussian_filter1d( spectrum.flux['brz'][0,:], smooth )
+            # This isn't the right thing to do!  Two problems
+            # 1. correlated errors.  This is thorny, and requires new data structures
+            # 2. Really, var[i,:] = sum( k(n)² var(i+n), n=-N..N )
+            #       where k(n) is the kernel that has half-width N
+            #    ...but this is only of limited meaning because of course the correlated
+            #    errors are huge.
+            # On the other hand, this WILL give you a feeling for the noise level
+            # in the original spectrum, which is maybe what we want.
+            spectrum.ivar['brz'][0,:] = scipy.ndimage.gaussian_filter1d( spectrum.ivar['brz'][0,:], smooth )
+        
+        return spectrum

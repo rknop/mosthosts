@@ -1,10 +1,8 @@
 # This one requires the DESI environment to be set up, as it uses
 #  the desi libraries
 
-#### ROB TODO : if a host has spectra in the skyportal, and there are
-#### *new* spectra of that same host in daily, this code won't upload
-#### the new spectra!  Fix that.
-
+#### ROB TODO : Add the ability to replace spectra on skyportal
+####            Add the ability to do releases other than daily
 
 import sys
 import os
@@ -30,7 +28,7 @@ def upload_desi_spectrum( sn_id, index, night, spectrum, mhsp, instrument_id=Non
 
     sn_id — the id on skyportal of the sn
     index — the "index" field in Most Hosts for the host this is a spectrum of
-    night — either an integer or a string in the format yyyymmdd
+    night — either an integer or a string in the format yyyymmdd or yyyy-mm-dd
     spectrum — a desispec.spectrum.Spectra object.  It should have just a 
                single spectrum, and a single band 'brz'
     mhsp — a MostHostsSkyPortal object
@@ -38,10 +36,11 @@ def upload_desi_spectrum( sn_id, index, night, spectrum, mhsp, instrument_id=Non
     """
 
     try:
-        yyyymmddparser = re.compile( '^(\d\d\d\d)(\d\d)(\d\d)$' )
-        match = yyyymmddparser.search( str(night) )
+        match = re.search( '^(\d\d\d\d)(\d\d)(\d\d)$', str(night) )
         if match is None:
-            raise ValueError( f'Error parsing {night} for yyyymmdd' )
+            match = re.search( '^(\d\d\d\d)-(\d\d)-(\d\d)$', str(night) )
+            if match is None:
+                raise ValueError( f'Error parsing {night} for yyyymmdd or yyyy-mm-dd' )
         nightlabel = f'{match.group(1)}-{match.group(2)}-{match.group(3)}'
         label = f'Host {int(index)} {nightlabel}'
         obsnight = datetime.datetime( int(match.group(1)), int(match.group(2)), int(match.group(3)) )
@@ -98,8 +97,8 @@ def main():
     parser.add_argument( "-u", "--dbuser", default=None, help="User for desi database" )
     parser.add_argument( "-p", "--dbpasswd", default=None, help="Password for desi database" )
     parser.add_argument( "-r", "--force-regen", default=False, action="store_true",
-                         help=( "Force regeneration of mosthosts_desi.csv from the desi database "
-                                " (by default, just read mosthosts_dei.csv, and do nothing)" ) )
+                         help=( "Force regeneration of mosthosts_desi_daily_desiobs.pkl from the desi database "
+                                " (by default, just read mosthosts_desi_daily_desiobs.pkl and do nothing)" ) )
     parser.add_argument( "-i", "--ignore-specinfo-cache", default=False, action="store_true",
                          help=( "Ignore (rebuild) cached file of information about what spectra are on SkyPortal" ) )
     parser.add_argument( "-t", "--skyportal-token", required=True, help="API token for skyportal" )
@@ -137,7 +136,7 @@ def main():
         # (From the pandas documentation: "Importantly, a list of tuples
         # indexes several complete MultiIndex keys, whereas a tuple of
         # lists refer to several values within a level."  So easy to
-        # imagine people getting that mixed up!
+        # imagine people getting that mixed up! )
         haszdf = mosthosts.haszdf.loc[ args.candidates ]
         if len(haszdf) == 0:
             raise RuntimeError( f'No lines left in list of MostHosts candidates with DESI redshifts after '
@@ -153,83 +152,110 @@ def main():
     if ( not args.ignore_specinfo_cache ) and os.path.isfile( "spspecinfo_cache.pkl" ):
         spspecinfo = pickle.load( open("specinfo_cache.pkl", "rb") )
     else:
-        specinfo = {}
+        spspecinfo = {}
 
-    labelparse = re.compile('^Host (\d+) (\d\d\d\d)-(\d\d)-(\d\d) ?(\d+)?$')
-        
-    curid = None
+    labelparse = re.compile('^Host (\d+) (\d\d\d\d-\d\d-\d\d) ?(\d+)?$')
+
+    # How I keep track:
+    # The data structure "spspecinfo" has info on what's on sky portal.
+    # It's a dictionary indexed by candidate id (the "spname" index from MostHostsDesi).
+    # Each element of that dictionary is a dictionary indexed by host index (the "index" from MostHostsDesi).
+    # Each element of that dictionary is a set of nights ("yyyy-mm-dd") for spectra that are on SkyPortal
+    #
+    # NOTE : it's possible, at least in principle, the same object will
+    # be observed on the same night with a different targetid.  Right now,
+    # this code ignores that and assumes it never happens.
+    
     numdid = 0
+    nmissing = 0
+    curid = None
+    skipcurid = False
     for mhdidx, mhdrow in haszdf.iterrows():
         if numdid % 100 == 0:
-            logger.info( f'***** Doing row {numdid} of {len(haszdf)} of hosts with spectra.' )
+            logger.info( f'***** Doing row {numdid} of {len(haszdf)} DESI host spectra.' )
         numdid += 1
         # mhdid is the current candidate id, mhddex is the host index of the candidate
-        mhdid, mhddex = mhdidx
-        mhddex = int(mhddex)          # Should already be int?
-        if curid != mhdid:
-            curid = mhdid
-            curidspec = None
-        if mhdid not in mhsp.df.index.values:
-            logger.error( f'{mhdid} is in MostHostsDesi but not MostHostsSkyPortal' )
+        mhdid, mhddex, targetid, tileid, petal, night = mhdidx
+        spname = mhdrow["spname"]
+        nightstr = str(night)
+        nightstr = f"{nightstr[0:4]}-{nightstr[4:6]}-{nightstr[6:8]}"
+
+        if ( ( spname in spspecinfo ) and ( mhddex in spspecinfo[spname] )
+             and ( nightstr in spspecinfo[spname][mhddex] ) ):
+            logger.info( f'{mhdid} host {mhddex} night {nightstr} already uploaded, moving on' )
             continue
-        if mhdid not in specinfo:
-            specinfo[mhdid] = {}
-        if mhddex in specinfo[mhdid]:
-            logger.info( f'[cached] {mhdid} host {mhddex} already has uploaded some spectra, '
-                         f'so not looking for more: {", ".join( specinfo[mhdid][mhddex] )}' )
+
+        # Get the spectra for the current object (if we haven't already in a previous iteration)
+        # Both from skyportal, and from desi
+        
+        if mhdid != curid:
+            curid = mhdid
+            skipcurid = False
+            curhost = None
+            
+            if spname not in mhsp.df.index.values:
+                logger.error( f'{spname} ({mhdid}) is in MostHostsDesi but not MostHostsSkyPortal' )
+                nmissing += 1
+                skipcurid = True
+                continue
+            if spname not in spspecinfo:
+                spspecinfo[spname] = {}
+            time.sleep( args.sleep_time )
+            specs = mhsp.spectra_for_obj( spname )
+            for spec in specs:
+                match = labelparse.search( spec['label'] )
+                if match is None:
+                    logger.error( f'Failed to parse spectrum label {spec["label"]} for {spname}' )
+                else:
+                    sphost = int(match.group(1))
+                    spnight = match.group(2)
+                    spextra = match.group(3)    # Ignored for now
+                    if sphost not in spspecinfo[spname]:
+                        spspecinfo[spname][sphost] = set()
+                    spspecinfo[spname][sphost].add( spnight )
+
+        if mhddex != curhost:
+            curhost = mhddex
+                
+            try:
+                si = SpectrumInfo( mhdrow['ra'], mhdrow['dec'], desipasswd=args.dbpasswd, logger=logger )
+            except Exception as e:
+                logger.exception( "Failed to create SpectrumInfo for {spname}, moving on." )
+                continue
+
+        if skipcurid:
+            continue
+
+        if mhddex not in spspecinfo[spname]:
+            spspecinfo[spname][mhddex] = set()
+
+        # See if we need to upload the current spectrum
+
+        if nightstr in spspecinfo[spname][mhddex]:
+            logger.info( f'{spname} host {mhddex} night {nightstr} already uploaded, moving on' )
+            continue
+
+        # Need to upload current spectrum
+
+        try:
+            spec = si.get_spectrum( targetid, tileid, petal, night )
+        except Exception as e:
+            logger.exception( f'Failed to get spectrum for {spname} '
+                              f'target {targetid} tile{tileid} petal {petal} night {night}' )
+            continue
+        if args.really_upload:
+            logger.info( f'Uploading {spname} host {mhddex} night {nightstr} (target {targetid})...' )
+            try:
+                upload_desi_spectrum( spname, mhddex, nightstr, spec, mhsp, instrument_id )
+            except Exception as e:
+                logger.exception( f'Error uploading target {targetid} tile {tileid} petal {petal} night {night}|' )
+            logger.info( f'...uploaded.' )
+            time.sleep( args.sleep_time )
+            spspecinfo[spname][mhddex].add( nightstr )
         else:
-            if curidspec is None:
-                time.sleep( args.sleep_time )
-                specs = mhsp.spectra_for_obj( mhdid )
-                curidspec = {}
-                for spec in specs:
-                    match = labelparse.search( spec['label'] )
-                    if match is None:
-                        logger.error( f'Failed to parse spectrum label {spec["label"]} for {mhdid}' )
-                    else:
-                        if int(match.group(1)) not in curidspec:
-                            curidspec[int(match.group(1))] = []
-                        curidspec[int(match.group(1))].append(spec['label'])
-            if mhddex in curidspec:
-                logger.info( f'{mhdid} host {mhddex} already has uploaded spectra: '
-                             f'{", ".join( curidspec[mhddex] )}' )
-
-            else:
-                # We've got spectra to upload
-                try:
-                    si = SpectrumInfo( mhdrow['ra'], mhdrow['dec'], desipasswd=args.dbpasswd, logger=logger )
-                except Exception as e:
-                    traceback.print_exc()
-                    logger.error( f"Failed to create SpectrumInfo for {mhdid} host {mhdidx}, moving on." )
-                    continue
-                for targetid in si.targetids:
-                    try:
-                        specs = si.get_spectra( targetid )
-                        infos = si.info_for_targetid( targetid )
-                    except Exception as e:
-                        logger.error( f'Failed to get spectra/info for targetid {targetid}, host {mhddex} of {mhdid}' )
-                        logger.error( f'Exception: {str(e)}' )
-                        continue
-                    for spec, info in zip( specs, infos ):
-                        logger.info( f'Uploading spectrum for {mhdid} host {mhddex}, '
-                                     f'targetid {targetid}, night {info["night"]}' )
-                        try:
-                            if args.really_upload:
-                                label = upload_desi_spectrum( mhdid, mhddex, info['night'], spec, mhsp, instrument_id )
-                                if label is not None:
-                                    if not mhddex in specinfo[mhdid]:
-                                        specinfo[mhdid][mhddex] = []
-                                    specinfo[mhdid][mhddex].append( label )
-                                time.sleep( args.sleep_time )
-                            else:
-                                logger.warning( 'Not really uploading, didn\'t set --really-upload' )
-                        except SpExc as e:
-                            logger.error( f'Failed to upload spectrum, moving on: {str(e)}' )
-                            time.sleep( args.sleep_time )
-                        
-    pickle.dump( specinfo, open("specinfo_cache.pkl", "wb") )
-    
-
+            logger.info( f'Would upload {spname} host {mhddex} night {nightstr} (target {targetid})' )
+            
+    pickle.dump( spspecinfo, open("specinfo_cache.pkl", "wb") )
 
 # ======================================================================
 

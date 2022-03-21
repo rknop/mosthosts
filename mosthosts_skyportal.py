@@ -7,6 +7,14 @@ import time
 # import html2text
 import pandas
 
+_logger = logging.getLogger( "mosthosts_skyportal" )
+_logerr = logging.StreamHandler( sys.stderr )
+_logger.addHandler( _logerr )
+_logerr.setFormatter( logging.Formatter( f'[%(asctime)s - %(levelname)s] - %(message)s' ) )
+_logger.setLevel( logging.INFO )
+
+# ======================================================================
+
 class SpExc(Exception):
     def __init__( self, status, info, message, data=None ):
         self.status = status
@@ -17,6 +25,8 @@ class SpExc(Exception):
     def __str__( self ):
         return f'Status {status}: {info} ("{message}")'
 
+# ======================================================================
+    
 class MostHostsSkyPortal:
     """Encapsulate info about what MostHosts candidates are on SkyPortal.
 
@@ -85,15 +95,7 @@ class MostHostsSkyPortal:
         self._spapi = f'{url}/api'
         self._token = token
         self._df = None
-
-        if logger is None:
-            self.logger = logging.getLogger( "mhsp" )
-            logerr = logging.StreamHandler( sys.stderr )
-            self.logger.addHandler( logerr )
-            logerr.setFormatter( logging.Formatter( f'[%(asctime)s - %(levelname)s] - %(message)s' ) )
-            self.logger.setLevel( logging.INFO )
-        else:
-            self.logger = logger
+        self.logger = _logger if logger is None else logger
         
     @property
     def df( self ):

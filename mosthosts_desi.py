@@ -117,7 +117,7 @@ class MostHostsDesi(object):
     
     # ========================================
     
-    def __init__( self, release='daily', force_regen=False, logger=None,
+    def __init__( self, release='daily', force_regen=False, latest_night_only=True, logger=None,
                   dbuserpwfile=None, dbuser=None, dbpasswd=None ):
         '''Build and return the a Pandas dataframe with info about Desi observation of mosthosts hosts.
         
@@ -141,6 +141,14 @@ class MostHostsDesi(object):
                       all the expected columns, it will be regenerated
                       from the database even if force_regen is False.
                       
+        latest_night_only — If True (default), and there are multiple
+                            nights with desi spectra for the same
+                            target/tile/petal, only keep the latest one.
+                            Since we're looking at coadded spectra,
+                            later nights should include the data of
+                            earlier nights.  If False, keep all nights
+                            as if they were separate things.
+
         dbuserpwfile — A file that has a single line with two words
                        separated by a single space.  The first is the
                        username for connecting to the desi database, the
@@ -193,51 +201,7 @@ class MostHostsDesi(object):
                 mustregen = True
 
         if mustregen:
-            # self.logger.warning( f"Building {csvfile.name} and {haszcsvfile.name} from database." )
-
-            # if release == "fujilupe":
-            #     self.logger.info( "=== Loading Fuji Information ===" )
-            #     self.generate_df( "fuji" )
-            #     _fujifulldf = self._fulldf
-            #     _fujihaszdf = self._haszdf
-            #     _fujidf = self._df
-            #     self.logger.info( "=== Loading Guadalupe Information ===" )
-            #     self.generate_df( "guadalupe" )
-            #     self.logger.info( "=== Merging Fuji and Guadalupe ===" )
-            #     # ****
-            #     self._fujifulldf = _fujifulldf
-            #     self._fujihaszdf = _fujihaszdf
-            #     self._fujidf = _fujidf
-            #     self._guadalupefulldf = self._fulldf
-            #     self._guadalupehaszdf = self._haszdf.copy()
-            #     self._guadalupedf = self._df.copy()
-            #     # ****
-            #     self._fulldf = None
-            #     intersec = _fujihaszdf.index.intersection( self._haszdf.index )
-            #     if len(intersec) > 0:
-            #         self.logger.error( f"Repeated indices in fuji and guadalupe: {intersec}" )
-            #     self._haszdf = pandas.concat( [ _fujihaszdf, self._haszdf ] )
-            #     # This one is more complicated;
-            #     #  I haven't figured out if there's a pandas merge function
-            #     #  that does what I want here.
-            #     # I know that the _df dataframes will have exactly the same
-            #     #  rows in the same order.
-            #     for i in range(len(_fujidf)):
-            #         if pandas.isna( self._df.iloc[i].z ):
-            #             if not pandas.isna( _fujidf.iloc[i].z ):
-            #                 dex = self._df.iloc[i].name
-            #                 # self.logger.debug( f'Importing {dex} from fuji' )
-            #                 # Pandas is loaded with lots of non-intuitive stuff
-            #                 # self._df.iloc[i].z = ... didn't work, had to use "at"
-            #                 self._df.at[dex, 'z'] = _fujidf.iloc[i].z
-            #                 self._df.at[dex, 'zdisp'] = _fujidf.iloc[i].zdisp
-            #                 self._df.at[dex, 'zerr'] = _fujidf.iloc[i].zerr
-            #         else:
-            #             if not pandas.isna( _fujidf.iloc[i].z ):
-            #                 self.logger.warning( f'Row {self._df.iloc[i].name} has redshifts from both '
-            #                                      f'fuji and guadalupe; using just the latter in df' )
-            # else:
-            self.generate_df( release )
+            self.generate_df( release, latest_night_only )
 
             with open( pklfile, "wb" ) as ofp:
                 pickle.dump( self._df, ofp )
@@ -294,7 +258,7 @@ class MostHostsDesi(object):
         
     # ========================================
             
-    def generate_df( self, release ):
+    def generate_df( self, release, latest_night_only ):
         # Get the dataframe of information from the desi tables
 
         dbconn = self.connect_to_database()
@@ -339,7 +303,15 @@ class MostHostsDesi(object):
                     desidf = newdf
                 else:
                     desidf = pandas.concat( [ desidf, newdf ] )
+        self.logger.info( f'Done {i} of {len(self._mosthosts)} hosts; '
+                          f'{nhavesome} hosts have redshifts, found a total of {nredshifts} redshifts' )
 
+        # At the end of this, the index is highly dysfunctional; it will be repeated 0, 1, ... for
+        # the inddexes of the dataframes that combined together.  Redo this so that there's an
+        # ordinal index.
+
+        desidf = desidf.reset_index().drop( 'level_0', axis=1 )
+        
         # We have to muck with datatypes so that they can be nullable, otherwise
         #   integers will get converted to floats and we'll lose information.
 
@@ -347,7 +319,14 @@ class MostHostsDesi(object):
         for field in intfields:
             desidf[field] = desidf[field].astype('Int64')
 
-        # Merge the dsi information into mosthosxts to make _fulldf
+        # Keep only the latest night for a given target/tile/petal
+
+        if latest_night_only:
+            prenightcull = len(desidf)
+            desidf = desidf.loc[ desidf.groupby( ['targetid', 'tileid', 'petal', 'zwarn'] )['night'].idxmax() ]
+            self.logger.info( f'{len(desidf)} of {prenightcull} redshifts left after keeping only latest night' )
+            
+        # Merge the desi information into mosthosts to make _fulldf
                     
         desidf.set_index( [ 'snname', 'index' ], inplace=True )
         self._fulldf = pandas.merge( self._mosthosts, desidf, how='left',
