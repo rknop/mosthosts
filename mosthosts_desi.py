@@ -16,13 +16,13 @@ _mhdlogger = logging.getLogger( "mosthosts_desi" )
 _logout = logging.StreamHandler( sys.stderr )
 _mhdlogger.addHandler( _logout )
 _logout.setFormatter( logging.Formatter( f'[%(asctime)s - %(levelname)s] - %(message)s' ) )
-_mhdlogger.setLevel( logging.INFO )
-# _mhdlogger.setLevel( logging.DEBUG )
+# _mhdlogger.setLevel( logging.INFO )
+_mhdlogger.setLevel( logging.DEBUG )
 
 # ======================================================================
 
 class MostHostsDesi(object):
-    '''Build and hold a two different Pandas dataframes with info about mosthosts objects with Desi observations.
+    '''Build and hold a three different Pandas dataframes with info about mosthosts objects with Desi observations.
     
     Build the dataframes by instantiating a MostHostsDesi object; see __init__ for more information.
 
@@ -105,6 +105,31 @@ class MostHostsDesi(object):
     spectype —
     subtype —
 
+
+    DATAFRAME OF DESI MAIN TARGETS
+
+    Access this with the maintargets DataFrame.  Only built if you run the find_main_targets() method.
+
+    The dataframe has *five* indices, because it's possible that the
+    same MH target will show up more than once as a DESI target.
+
+    spnamne — same as from df
+    index — same as from df
+    survey — one of "main", "sv1", "sv2", "sv3", or "backup"
+          NOTE --- CURRENTLY ONLY SEARCHES THE MAIN SURVEY, so this will always be "main"
+    whenobs — one of "bright" or "dark"
+    targetid — DESI target id.
+
+    Columns are the basic MostHosts columns from df, plus:
+
+    desi_target — not sure why this isn't the same as targetid, but whatever
+    bgs_target — I *think* 0 means not in BGS
+    mws_target — (Same 0 interp)
+    scnd_target
+    # (this next column is not really there)
+    # targetfile — The name of the FITS file that this target information is from;
+    #        replace /targets/ with /global/cfs/cdirs/desi/target/ to find on NERSC
+
     '''
     
     @property
@@ -114,6 +139,11 @@ class MostHostsDesi(object):
     @property
     def haszdf( self ):
         return self._haszdf
+
+    @property
+    def maintargets( self ):
+        return self._maintargets
+
     
     # ========================================
     
@@ -354,6 +384,58 @@ class MostHostsDesi(object):
 
         self.logger.info( f"Done generating dataframes." )
         dbconn.close()
+        
+    # ========================================
+            
+    def find_main_targets( self, force_regen=False ):
+        """Search the DESI targets tables to match MostHosts to DESI main targets.
+
+        Set force_regen=True to force searching the database.  Otherwise, it will read 
+        mosthosts_desi_maintargets.pkl if that file exists.
+        """
+
+        cachefile = pathlib.Path( os.getcwd() ) / "mosthosts_desi_maintargets.pkl"
+        csvfile = pathlib.Path( os.getcwd() ) / "mosthosts_desi_maintargets.csv"
+        if ( not force_regen ) and ( cachefile.is_file() ) and ( csvfile.is_file() ):
+            with open( cachefile, "rb" ) as ifp:
+                self._maintargets = pickle.load( ifp )
+            self.logger.info( f"MainTargets info read from {cachefile.name}" )
+            return
+
+        dfnoindex = self._df.reset_index()
+        columns = {}
+        for col in dfnoindex.columns:
+            columns[col] = []
+        dbcols = [ 'survey', 'whenobs', 'targetid', 'desi_target', 'bgs_target', 'mws_target', 'scnd_target' ]
+        for col in dbcols:
+            columns[col] = []
+            
+        dbconn = self.connect_to_database()
+        cursor = dbconn.cursor()
+        did = 0
+        for i, row in dfnoindex.iterrows():
+            if ( did % 1000 ) == 0:
+                self.logger.info( f'Searched DESI targets for {did} of {len(dfnoindex)} mosthosts, '
+                                  f'Have {len(columns["survey"])} targets so far' )
+            q = ( f"SELECT {','.join(dbcols)} "
+                  "FROM general.maintargets WHERE q3c_radial_query(ra,dec,%(ra)s,%(dec)s,1./3600.)" )
+            if did == 0:
+                self.logger.debug( cursor.mogrify( q, { 'ra': row["ra"], 'dec': row["dec"] } ) )
+            cursor.execute( q, { 'ra': row["ra"], 'dec': row["dec"] } )
+            results = cursor.fetchall()
+            for res in results:
+                for col in dfnoindex.columns:
+                    columns[col].append( row[col] )
+                for col in dbcols:
+                    columns[col].append( res[col] )
+            did += 1
+                    
+        self._maintargets = pandas.DataFrame( columns ).set_index( ['spname', 'index', 'survey',
+                                                                    'whenobs', 'targetid' ] )
+        with open( cachefile, "wb" ) as ofp:
+            pickle.dump( self._maintargets, ofp )
+        self._maintargets.to_csv( csvfile )
+        self.logger.info( f"Wrote desi target info to {cachefile.name}" )
         
 # ======================================================================
 
