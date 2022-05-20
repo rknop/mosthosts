@@ -62,7 +62,7 @@ def find_desi_spec( df, radius=1./3600., release='daily', desidb=None, desipassw
     subtype = []
     for i in range(len(df)):
         if ( i % infoevery ) == 0:
-            _logger.info( "Have searched {i} of {len(df)} positions for DESI spectra..." )
+            _logger.info( f"Have searched {i} of {len(df)} positions for DESI spectra..." )
         cursor = desidb.cursor()
         q = ( f"SELECT c.filename,f.targetid,f.tileid,f.petal_loc,f.device_loc,"
               f"  c.night,f.fiber,f.mean_fiber_ra,f.mean_fiber_dec,f.target_ra,f.target_dec,"
