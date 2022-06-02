@@ -233,10 +233,12 @@ class MostHostsDesi(object):
         if mustregen:
             self.generate_df( release, latest_night_only )
 
-            with open( pklfile, "wb" ) as ofp:
-                pickle.dump( self._df, ofp )
-            with open( haszpklfile, "wb") as ofp:
-                pickle.dump( self._haszdf, ofp )
+            # with open( pklfile, "wb" ) as ofp:
+            #     pickle.dump( self._df, ofp )
+            # with open( haszpklfile, "wb") as ofp:
+            #     pickle.dump( self._haszdf, ofp )
+            self._df.to_pickle( pklfile, protocol=5 )
+            self._haszdf.to_pickle( haszpklfile, protocol=5 )
             self._df.to_csv( csvfile )
             self._haszdf.to_csv( haszcsvfile )
 
@@ -287,10 +289,35 @@ class MostHostsDesi(object):
         
         
     # ========================================
+
+    def query_desiobs_at_radec( self, ra, dec, release ):
+        cursor = dbconn.cursor()
+        qbase = ( "SELECT c.tileid,c.petal,c.night,r.targetid,r.z,r.zerr,r.zwarn,"
+                  "r.chi2,r.deltachi2,r.spectype,r.subtype "
+                  "FROM {release}.cumulative_tiles c "
+                  "INNER JOIN {release}.tiles_redshifts r ON r.cumultile_id=c.id "
+                  "INNER JOIN {release}.tiles_fibermap f ON f.cumultile_id=c.id AND f.targetid=r.targetid "
+                  "WHERE q3c_radial_query(f.target_ra,f.target_dec,%(ra)s,%(dec)s,%(radius)s) " )
+        # HACK ALERT
+        if release == "fujilupe":
+            qf = qbase.replace( "{release}", "fuji" )
+            qg = qbase.replace( "{release}", "guadalupe" )
+            q = f"({qf}) UNION ({qg}) ORDER BY night"
+        else:
+            if release not in ( 'daily', 'everest', 'fuji', 'guadalupe' ):
+                raise ValueError( f'Unknown release {release}' )
+            q = qbase.replace( "{release}", release )
+            q += " ORDER BY night"
+        cursor.execute( q, { "ra": ra, "dec": dec, "radius": 1./3600. } )
+        rows = cursor.fetchall()
+    
+    # ========================================
             
     def generate_df( self, release, latest_night_only ):
         # Get the dataframe of information from the desi tables
 
+        self.logger.info( f'Rebuilding info for release {release}' )
+        
         dbconn = self.connect_to_database()
         desidf = None
 
@@ -432,8 +459,9 @@ class MostHostsDesi(object):
                     
         self._maintargets = pandas.DataFrame( columns ).set_index( ['spname', 'index', 'survey',
                                                                     'whenobs', 'targetid' ] )
-        with open( cachefile, "wb" ) as ofp:
-            pickle.dump( self._maintargets, ofp )
+        # with open( cachefile, "wb" ) as ofp:
+        #     pickle.dump( self._maintargets, ofp )
+        self._maintargets.to_pickle( cachefile )
         self._maintargets.to_csv( csvfile )
         self.logger.info( f"Wrote desi target info to {cachefile.name}" )
         

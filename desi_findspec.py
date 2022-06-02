@@ -9,9 +9,80 @@ _logger = logging.getLogger(__name__)
 if not _logger.hasHandlers():
     _logout = logging.StreamHandler( sys.stderr )
     _logger.addHandler( _logout )
-    _formatter = logging.Formatter( f'[%(asctime)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S' )
+    _formatter = logging.Formatter( f'[%(asctime)s - %(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S' )
     _logout.setFormatter( _formatter )
     _logger.setLevel( logging.INFO )
+
+def find_desi_targets( df, radius=1./3600., include=['main','backup','sv1','sv2','sv3'],
+                       desidb=None, desipasswd=None, infoevery=100 ):
+    """Adds information about desi targets to a Pandas dataframe.  Does not include secondary targets.
+
+    df --  A Pandas dataframe that must have columns "ra" and "Dec"
+    radius -- Radius of search in degrees (default 1/3600, i.e. 1")
+    include -- which target lists to search (default: ['main', 'backup', 'sv1', 'sv2', 'sv3'] )
+
+    Will add the following columns to the dataframe:
+       targetlist, targetid, survey, brickid, brickname, brick_objid
+    """
+
+    mustclose = False
+    if desidb is None:
+        mustclose = True
+        if desipasswd is None:
+            raise ValueError( "Must either pass a desidb (psycopg2 connection) or a desipasswd (string)" )
+        desidb = psycopg2.connect( dbname='desidb', host='decatdb.lbl.gov', user='desi', password=desipasswd,
+                                   cursor_factory=psycopg2.extras.RealDictCursor )
+
+    indices = []
+    targetlists = []
+    targetids = []
+    surveys = []
+    brickids = []
+    bricknames = []
+    brick_objids = []
+    for i in range(len(df)):
+        if ( i % infoevery ) == 0:
+            _logger.info( f'Have searched {i} of {len(df)} positions for DESI targets...' )
+        cursor = desidb.cursor()
+        for which in include:
+            if which not in ['main','backup','secondary','sv1','sv2','sv3']:
+                if mustclose: desidb.close()
+                raise ValueError( f"Unknown target table {which}" )
+            q = ( f"SELECT targetid,survey,brickid,brickname,brick_objid "
+                  f"FROM general.{which}targets "
+                  f"WHERE q3c_radial_query(ra,\"dec\",%(ra)s,%(dec)s,%(radius)s)" )
+            mogq = cursor.mogrify( q, { "ra": df['ra'][i], "dec": df['dec'][i], "radius": radius } )
+            _logger.debug( "Sending query {mogq}" )
+            cursor.execute( q, { "ra": df['ra'][i], "dec": df['dec'][i], "radius": radius } )
+            result = cursor.fetchall()
+
+            for row in result:
+                indices.append( df.index.values[i] )
+                targetlists.append( which )
+                targetids.append( row['targetid'] )
+                surveys.append( row['survey'] )
+                brickids.append( row['brickid'] )
+                bricknames.append( row['brickname'] )
+                brick_objids.append( row['brick_objid'] )
+
+    if mustclose:
+        desidb.close()
+
+    if isinstance( indices[0], tuple ):
+        index = pandas.MultiIndex.from_tuples( indices, names=df.index.names )
+    else:
+        index = indices
+    newdf = pandas.DataFrame( { "targetlist": targetlists,
+                                "targetid": targetids,
+                                "survey": surveys,
+                                "brickid": brickids,
+                                "brickname": bricknames,
+                                "brick_objid": brick_objids },
+                              index = index )
+    newdf = df.merge( newdf, how='outer', left_index=True, right_index=True )
+
+    return newdf
+        
 
 def find_desi_spec( df, radius=1./3600., release='daily', desidb=None, desipasswd=None,
                     infoevery=100 ):
@@ -93,7 +164,9 @@ def find_desi_spec( df, radius=1./3600., release='daily', desidb=None, desipassw
             spectype.append( row['spectype'] )
             subtype.append( row['subtype'] )
 
-
+    if mustclose:
+        desidb.close()
+            
     if isinstance( indices[0], tuple ):
         index = pandas.MultiIndex.from_tuples( indices, names=df.index.names )
     else:

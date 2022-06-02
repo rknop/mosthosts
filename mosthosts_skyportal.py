@@ -23,7 +23,7 @@ class SpExc(Exception):
         self.data = data
 
     def __str__( self ):
-        return f'Status {status}: {info} ("{message}")'
+        return f'Status {self.status}: {self.info} ("{self.message}")'
 
 # ======================================================================
     
@@ -84,6 +84,9 @@ class MostHostsSkyPortal:
     spectra_for_obj(objid) method of your MostHostsSkyPortal instance to
     get all the spectra for the object with id objid (which is the index
     of pandas table found in the df property of your instance).
+
+    Another method, get_spectrum_info(), returns a Pandas DataFrame with
+    information about all of the spectra in the MostHosts group.
 
     """
     
@@ -175,7 +178,7 @@ class MostHostsSkyPortal:
             data = { 'group_ids': [self.mosthosts_group_id],
                      'includeSpectrumExists': True,
                      'numPerPage': 100,
-                     'pageNumber': 1,
+                     'pageNumber': 1
             }
             while len(sources) < totnumsrc:
                 info = self.sp_req_data( 'GET', f'{self._spapi}/sources', params=data )
@@ -189,6 +192,30 @@ class MostHostsSkyPortal:
             self._df.set_index( 'id', inplace=True )
             self._df.to_pickle( "skyportalcache.pkl" )
 
+    def get_spectrum_info( self ):
+        """Pull down info about all spectra in the mosthosts group.
+
+        Returns a pandas DataFrame with columns corresponding to what
+        skyportals api/spectra returns:
+
+        owner_id — internal id of user on skyportal
+        obj_id — ID of the object on skyportal (corresponds to spname in mosthosts)
+        observed_at — date
+        origin — ?
+        type — "host_center", but maybe something else
+        label — The label of this spectrum
+        instrument_id — internal id from skyportal
+        followup_request_id — internal id from skyportal
+        assignment_id — internal id from skyportal
+        altdata — ?
+        original_file_filename — None (given how I uploaded the spectra)
+        """
+        data = { 'groupIDs': [self.mosthosts_group_id],
+                 'minimalPayload': True
+        }
+        info = self.sp_req_data( 'GET', f'{self._spapi}/spectra', params=data )
+        return( pandas.DataFrame( info ) )
+            
     def get_instrument_id( self, name ):
         params = { 'name': name }
         data = self.sp_req_data('GET', f'{self._spapi}/instrument', params=params )
