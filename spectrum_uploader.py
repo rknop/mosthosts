@@ -23,11 +23,12 @@ from desi_specinfo import SpectrumInfo
 
 import desispec
 
-def upload_desi_spectrum( sn_id, index, night, spectrum, mhsp, instrument_id=None, logger=logging.getLogger("main") ):
+def upload_desi_spectrum( sn_id, index, nhostsforsn, night, spectrum, mhsp, instrument_id=None, logger=logging.getLogger("main") ):
     """Upload a desispec.spectrum.Spectra to SkyPortal.
 
     sn_id — the id on skyportal of the sn
     index — the "index" field in Most Hosts for the host this is a spectrum of
+    nhostsforsn — the number of hosts there are for this sn
     night — either an integer or a string in the format yyyymmdd or yyyy-mm-dd
     spectrum — a desispec.spectrum.Spectra object.  It should have just a 
                single spectrum, and a single band 'brz'
@@ -42,7 +43,7 @@ def upload_desi_spectrum( sn_id, index, night, spectrum, mhsp, instrument_id=Non
             if match is None:
                 raise ValueError( f'Error parsing {night} for yyyymmdd or yyyy-mm-dd' )
         nightlabel = f'{match.group(1)}-{match.group(2)}-{match.group(3)}'
-        label = f'Host {int(index)} {nightlabel}'
+        label = f'Host {int(index)} of {int(nhostsforsn)} {nightlabel}'
         obsnight = datetime.datetime( int(match.group(1)), int(match.group(2)), int(match.group(3)) )
         if instrument_id is None:
             instrument_id = mhsp.get_instrument_id('DESI')
@@ -250,7 +251,8 @@ def main():
         if args.really_upload:
             logger.info( f'Uploading {spname} host {mhddex} night {nightstr} (target {targetid})...' )
             try:
-                upload_desi_spectrum( spname, mhddex, nightstr, spec, mhsp, instrument_id )
+                nhostsforsn = len( mosthosts.df[ mosthosts.df['spname']==spname ] )
+                upload_desi_spectrum( spname, mhddex, nhostsforsn, nightstr, spec, mhsp, instrument_id )
             except Exception as e:
                 logger.exception( f'Error uploading target {targetid} tile {tileid} petal {petal} night {night}|' )
             logger.info( f'...uploaded.' )
