@@ -99,6 +99,8 @@ def main():
     parser.add_argument( "-r", "--force-regen", default=False, action="store_true",
                          help=( "Force regeneration of mosthosts_desi_daily_desiobs.pkl from the desi database "
                                 " (by default, just read mosthosts_desi_daily_desiobs.pkl and do nothing)" ) )
+    parser.add_argument( "--regen-skyportal", default=False, action="store_true",
+                         help=( "Reread skyportal information from skyportal (by default, just reads skyportalcache.pkl)" ) )
     parser.add_argument( "-i", "--ignore-specinfo-cache", default=False, action="store_true",
                          help=( "Ignore (rebuild) cached file of information about what spectra are on SkyPortal" ) )
     parser.add_argument( "-t", "--skyportal-token", required=True, help="API token for skyportal" )
@@ -145,6 +147,8 @@ def main():
         haszdf = mosthosts.haszdf
     
     mhsp = MostHostsSkyPortal( token=args.skyportal_token, logger=logger )
+    if args.regen_skyportal:
+        mhsp.generate_df( regen=True )
     instrument_id = mhsp.get_instrument_id('DESI')
     
     # Try to figure out which desi spectra are already uploaded
@@ -154,7 +158,7 @@ def main():
     else:
         spspecinfo = {}
 
-    labelparse = re.compile('^Host (\d+) (\d\d\d\d-\d\d-\d\d) ?(\d+)?$')
+    labelparse = re.compile('^Host (\d+) of \d+ (\d\d\d\d-\d\d-\d\d) ?(\d+)?$')
 
     # How I keep track:
     # The data structure "spspecinfo" has info on what's on sky portal.
