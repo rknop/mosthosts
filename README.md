@@ -84,6 +84,7 @@ You can also get some information about the spectrum by calling
 
 ```
     spectrum_info_list = specinfo.info_for_targetid( targetid )
+```
 
 You'll get a list back whose elements correspond to the elements of what
 is returned by `get_spectra`; each element of the list is a dict with
