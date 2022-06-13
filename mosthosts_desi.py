@@ -36,14 +36,14 @@ class MostHostsDesi(object):
     
     The dataframe has two indexes:
     
-    spname — the name used for skyportal.  This will be the TNS name if it exists,
-             else the IAU name if it exists, else the PTFIPTF name if it exists,
-             else snname
+    snname — the primary snname from the mosthosts table.  These names are heterogeneous.
     index — a counter starting from 1 for SNe from mosthosts that have more than one host.
     
     It has columns:
     
-    snname — the primary snname from the mosthosts table.  These names are heterogeneous.
+    spname — the name used for skyportal.  This will be the TNS name if it exists,
+             else the IAU name if it exists, else the PTFIPTF name if it exists,
+             else snname
     ra — ra of the host (degrees)
     dec — dec of the host (degrees)
     pmra —

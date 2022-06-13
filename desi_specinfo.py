@@ -170,6 +170,20 @@ class SpectrumInfo(object):
             spectra.append( self.get_spectrum( targetid, spec['tileid'], spec['petal_loc'], spec['night'] ) )
         return spectra
 
+    def filepath( self, targetid, tile, petal, night ):
+        """Return path (pathlib.Path object) of the coadd file for specified targetid, tile, petal, night."""
+
+        try:
+            row = self._tiledata.loc[ targetid, tile, petal, night ]
+        except KeyError as e:
+            # import pdb; pdb.set_trace()
+            raise TargetNotFound( f'No spectrum for target {targetid}, tile {tile}, petal {petal}, night {night}' )
+
+        match = self.nameparse.search( row["filename"] )
+        if match is None:
+            raise ValueError( f'Error parsing filename {spec["filename"]}' )
+        return self.BASE_DIR / match.group(1) / f"coadd{match.group(3)}"
+    
     def get_spectrum( self, targetid, tile, petal, night, smooth=0 ):
         """Returns a desispec.spectra.Spectra object for the specified target/tile/petal/night.
         
@@ -183,16 +197,7 @@ class SpectrumInfo(object):
         in code).  smooth=0 is always safer.
 
         """
-        try:
-            row = self._tiledata.loc[ targetid, tile, petal, night ]
-        except KeyError as e:
-            # import pdb; pdb.set_trace()
-            raise TargetNotFound( f'No spectrum for target {targetid}, tile {tile}, petal {petal}, night {night}' )
-
-        match = self.nameparse.search( row["filename"] )
-        if match is None:
-            raise ValueError( f'Error parsing filename {spec["filename"]}' )
-        filepath = self.BASE_DIR / match.group(1) / f"coadd{match.group(3)}"
+        filepath = self.filepath( targetid, tile, petal, night )
         if not filepath.is_file():
             raise FileNotFoundError( f'File {spec["filename"]} doesn\'t exist' )
         threespectrums = desispec.io.spectra.read_spectra( filepath ).select( targets=[targetid] )
