@@ -5,6 +5,7 @@ Libraries here include:
   * `mosthosts_desi.py` — for figuring out which Most Hosts objects have DESI observations
   * `desi_specinfo.py` — for actually getting the DESI spectrum of a Most Hosts host
   * `mosthosts_skyportal.py` — link to the DESI SkyPortal [CURRENTLY BROKEN]
+  * `desi_findspec.py` — generic finding of DESI spectra at RA/DEC
 
 ## `mosthosts_desi.py` : Reading mosthosts and matching to DESI observations
 
@@ -83,6 +84,7 @@ You can also get some information about the spectrum by calling
 
 ```
     spectrum_info_list = specinfo.info_for_targetid( targetid )
+```
 
 You'll get a list back whose elements correspond to the elements of what
 is returned by `get_spectra`; each element of the list is a dict with
@@ -103,3 +105,18 @@ Note that to use that, you'll need to edit the second code block to put
 in the right database password.  (I have it reading from a file in my
 directories that isn't world readable, so the code won't run as is on
 NERSC Jupyter for anybody else.)
+
+## `mosthosts_skyportal.py`
+
+Needs documentation.
+
+## `desi_findspec.py`
+
+Has two functions:
+
+  * `find_desi_targets` for searching desi target tables
+  * `find_desi_spec` for searching a desi release (or daily) for spectra
+
+There's an example in the Jupyter notebook `desi_spec_at_radec.py`
+
+Load the module and do `help(<function>)` for usage.
