@@ -280,8 +280,7 @@ class MostHostsDesi(object):
         # Change type of index to pandas Int64 so that it can be nullable
         mosthosts['index'] = mosthosts['index'].astype('Int64')
 
-        # # Add a column that indexes the hosts for that one supernova, and then rearrange the table
-        mosthosts = mosthosts.set_index( ['snname', 'index' ] )
+        mosthosts.set_index( ['snname', 'index' ], inplace=True )
         mosthosts = mosthosts.sort_index()
 
         cursor.close()
@@ -316,6 +315,9 @@ class MostHostsDesi(object):
     def generate_df( self, release, latest_night_only ):
         # Get the dataframe of information from the desi tables
 
+        if release == "fujilupe":
+            raise RuntimeError( "Fujilupe hack not implemented." )
+        
         self.logger.info( f'Rebuilding info for release {release}' )
         
         dbconn = self.connect_to_database()
@@ -323,59 +325,49 @@ class MostHostsDesi(object):
 
         nhavesome = 0
         nredshifts = 0
-        for i in range(len(self._mosthosts)):
-        # for i in range(1000):
-            if (i%1000) == 0:
-                self.logger.info( f'Done {i} of {len(self._mosthosts)} hosts; '
-                                  f'{nhavesome} hosts have redshifts, found a total of {nredshifts} redshifts' )
-            ra = self._mosthosts['ra'][i]
-            dec = self._mosthosts['dec'][i]
 
-            cursor = dbconn.cursor()
-            qbase = ( "SELECT c.tileid,c.petal,c.night,r.targetid,r.z,r.zerr,r.zwarn,"
-                      "r.chi2,r.deltachi2,r.spectype,r.subtype "
-                      "FROM {release}.cumulative_tiles c "
-                      "INNER JOIN {release}.tiles_redshifts r ON r.cumultile_id=c.id "
-                      "INNER JOIN {release}.tiles_fibermap f ON f.cumultile_id=c.id AND f.targetid=r.targetid "
-                      "WHERE q3c_radial_query(f.target_ra,f.target_dec,%(ra)s,%(dec)s,%(radius)s) " )
-            # HACK ALERT
-            if release == "fujilupe":
-                qf = qbase.replace( "{release}", "fuji" )
-                qg = qbase.replace( "{release}", "guadalupe" )
-                q = f"({qf}) UNION ({qg}) ORDER BY night"
-            else:
-                if release not in ( 'daily', 'everest', 'fuji', 'guadalupe' ):
-                    raise ValueError( f'Unknown release {release}' )
-                q = qbase.replace( "{release}", release )
-                q += " ORDER BY night"
-            cursor.execute( q, { "ra": ra, "dec": dec, "radius": 1./3600. } )
-            rows = cursor.fetchall()
-            if len(rows) > 0:
-                nhavesome += 1
-                nredshifts += len(rows)
-                newdf = pandas.DataFrame(rows)
-                newdf['snname'] = self._mosthosts.index.get_level_values("snname")[i]
-                newdf['index'] = self._mosthosts.index.get_level_values("index")[i]
-                if desidf is None:
-                    desidf = newdf
-                else:
-                    desidf = pandas.concat( [ desidf, newdf ] )
-        self.logger.info( f'Done {i} of {len(self._mosthosts)} hosts; '
-                          f'{nhavesome} hosts have redshifts, found a total of {nredshifts} redshifts' )
+        cursor = dbconn.cursor()
 
-        # At the end of this, the index is highly dysfunctional; it will be repeated 0, 1, ... for
-        # the inddexes of the dataframes that combined together.  Redo this so that there's an
-        # ordinal index.
+        # First, build a temporary table matching targetid/tile/petal to mosthosts
+        self.logger.info( f'Sending q3c_join query for release {release}' )
+        query = ( f"SELECT m.snname,m.index,f.targetid,f.tileid,f.petal_loc "
+                  f"INTO TEMP TABLE temp_mosthosts_search1 "
+                  f"FROM static.mosthosts m "
+                  f"INNER JOIN {release}.tiles_fibermap f "
+                  f"  ON q3c_join(m.ra,m.dec,f.target_ra,f.target_dec,%(radius)s) " )
+        subs = { 'radius': 1./3600. }
+        cursor.execute( query, subs )
+        query = ( "SELECT COUNT(*) AS n FROM temp_mosthosts_search1" )
+        cursor.execute( query )
+        n = cursor.fetchone()['n']
+        query = ( "SELECT COUNT(*) AS n FROM temp_mosthosts_search1 WHERE targetid IS NOT NULL" )
+        cursor.execute( query )
+        nwtarg = cursor.fetchone()['n']
+        self.logger.info( f'...temporary table has {n} rows, {nwtarg} including a desi observation.' )
 
-        desidf = desidf.reset_index().drop( 'level_0', axis=1 )
+        # Next: get nights from cumulative_tiles redshifts etc. from tiles_redshifts
+
+        self.logger.info( f'Getting night/redshift/type info' )
+        query = ( f"SELECT m.snname,m.index,m.targetid,m.tileid,m.petal_loc,c.night,"
+                  f"  r.z,r.zerr,r.zwarn,r.chi2,r.deltachi2,r.spectype,r.subtype "
+                  f"FROM temp_mosthosts_search1 m "
+                  f"INNER JOIN ("
+                  f"  {release}.cumulative_tiles c INNER JOIN {release}.tiles_redshifts r ON r.cumultile_id=c.id"
+                  f") ON (c.tileid,c.petal)=(m.tileid,m.petal_loc) AND m.targetid=r.targetid" )
+        cursor.execute( query )
+        desidf = pandas.DataFrame( cursor.fetchall() )
+        self.logger.info( f"...done getting night/redshift/type info, got {len(desidf)} rows." )
+
+        dbconn.close()
         
-        # We have to muck with datatypes so that they can be nullable, otherwise
-        #   integers will get converted to floats and we'll lose information.
-
-        intfields = ( 'tileid', 'petal', 'night', 'targetid' )
-        for field in intfields:
-            desidf[field] = desidf[field].astype('Int64')
-
+        # Convert some of the columns to pandas Int* so that they can be nullable
+        desidf['targetid'] = desidf['targetid'].astype('Int64')
+        desidf['tileid'] = desidf['tileid'].astype('Int64')
+        desidf['petal_loc'] = desidf['petal_loc'].astype('Int16')
+        desidf['night'] = desidf['night'].astype('Int32')
+        desidf['zwarn'] = desidf['zwarn'].astype('Int64')
+        desidf.rename( { 'petal_loc': 'petal' }, inplace=True, axis=1 )
+        
         # Keep only the latest night for a given target/tile/petal
 
         if latest_night_only:
@@ -383,34 +375,31 @@ class MostHostsDesi(object):
             desidf = desidf.loc[ desidf.groupby( ['targetid', 'tileid', 'petal', 'zwarn'] )['night'].idxmax() ]
             self.logger.info( f'{len(desidf)} of {prenightcull} redshifts left after keeping only latest night' )
             
-        # Merge the desi information into mosthosts to make _fulldf
-                    
-        desidf.set_index( [ 'snname', 'index' ], inplace=True )
-        self._fulldf = pandas.merge( self._mosthosts, desidf, how='left',
-                                     left_index=True, right_index=True, copy=True )
-        self._fulldf.reset_index( inplace=True )
+        # Merge these with the _mosthosts table to make the _haszdf table
 
-        # _haszdf has all information about redshifts in desi
+        self.logger.info( "Building hazdf..." )
+        desidf.set_index( ['snname', 'index', 'targetid', 'tileid', 'petal', 'night' ], inplace=True )
+        self._haszdf = self._mosthosts.join( desidf, how="inner" )
+
+        # Combine together redshifts in desidf to make a sort of aggregate redshift
+        # Then make the _df table by appending this to the _mosthosts talbe
+
+        self.logger.info( "Building df..." )
         
-        self._haszdf = self._fulldf[ self._fulldf['z'].notnull() ].copy()
-        self._haszdf.set_index( ['snname', 'index', 'targetid', 'tileid', 'petal', 'night'], inplace=True )
-
-        # _df has combined information
-
-        subdf = self._fulldf[ ( self._fulldf['z'].notnull() ) & ( self._fulldf['zwarn'] == 0 ) ]
         def zcomb( row ):
             norm = ( 1. / row['zerr']**2 ).sum()
             row['zdisp'] = row['z'].max() - row['z'].min()
             row['z'] = ( row['z'] / row['zerr']**2 ).sum() / norm
             row['zerr'] = np.sqrt( 1. / norm )
             return row.iloc[0]
-        subdf = subdf.groupby( ['snname','index'] ).apply( zcomb )
-        subdf = subdf.set_index( ['snname', 'index'] )[ [ 'z', 'zerr', 'zdisp' ] ]
 
-        self._df = pandas.merge( self._mosthosts, subdf, how='left', left_index=True, right_index=True, copy=True )
-
+        subdf = desidf[ desidf['zwarn'] == 0 ]
+        combdf = subdf.reset_index().groupby( ['snname','index'] ).apply( zcomb )
+        combdf = combdf.set_index( ['snname', 'index'] )[ [ 'z', 'zerr', 'zdisp' ] ]
+        
+        self._df = self._mosthosts.join( combdf, how='left' )
+        
         self.logger.info( f"Done generating dataframes." )
-        dbconn.close()
         
     # ========================================
             
