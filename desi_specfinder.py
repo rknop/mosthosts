@@ -150,6 +150,11 @@ class SpectrumFinder(object):
         """A set of targetids that have spectra in everest"""
         return self._targetids
     
+    def targetids_for_name( self, name ):
+        tmpdf = self._tiledata.reset_index()
+        tmpdf = tmpdf[ tmpdf['name'] == name ]
+        return set( tmpdf['targetid'].values )
+
     def info_for_targetid( self, targetid ):
         """Returns a list of dicts.
         
