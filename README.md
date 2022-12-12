@@ -2,10 +2,10 @@
 
 Libraries here include:
 
-  * `mosthosts_desi.py` — for figuring out which Most Hosts objects have DESI observations
+  * `mosthosts_desi.py` — for figuring out which Most Hosts objects have DESI targets and observations
   * `desi_specinfo.py` — for actually getting the DESI spectrum of a Most Hosts host
   * `mosthosts_skyportal.py` — link to the DESI SkyPortal [CURRENTLY BROKEN]
-  * `desi_findspec.py` — generic finding of DESI spectra at RA/DEC
+  * `desi_findspec.py` — generic finding of DESI targets and spectra at RA/DEC
 
 ## `mosthosts_desi.py` : Reading mosthosts and matching to DESI observations
 

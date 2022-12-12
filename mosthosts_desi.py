@@ -32,7 +32,7 @@ class MostHostsDesi(object):
 
     ALL MOSTHOSTS DATAFRAME:
     
-    Access the dataframe with the df property.
+    Access the dataframe with the df property.  It has one row for each host in the Mosthosts table.
     
     The dataframe has two indexes:
     
@@ -113,7 +113,7 @@ class MostHostsDesi(object):
     The dataframe has *five* indices, because it's possible that the
     same MH target will show up more than once as a DESI target.
 
-    spnamne — same as from df
+    snnamne — same as from df
     index — same as from df
     survey — one of "main", "sv1", "sv2", "sv3", or "backup"
           NOTE --- CURRENTLY ONLY SEARCHES THE MAIN SURVEY, so this will always be "main"
@@ -122,6 +122,7 @@ class MostHostsDesi(object):
 
     Columns are the basic MostHosts columns from df, plus:
 
+    spname — same as from df
     desi_target — not sure why this isn't the same as targetid, but whatever
     bgs_target — I *think* 0 means not in BGS
     mws_target — (Same 0 interp)
@@ -256,6 +257,21 @@ class MostHostsDesi(object):
                                    cursor_factory=psycopg2.extras.RealDictCursor )
         return dbconn
     
+    # =============================================
+    
+    @staticmethod
+    
+    # Add the spname column
+    def get_spname( row ):
+        if row['tns_name'] != 'None':
+            return row['tns_name']
+        elif row['iau_name'] != 'None':
+            return row['iau_name']
+        elif row['ptfiptf_name'] != 'None':
+            return row['ptfiptf_name']
+        else:
+            return row['snname']
+            
     # ========================================
 
     def load_mosthosts( self, dbconn ):
@@ -264,17 +280,7 @@ class MostHostsDesi(object):
         cursor.execute( q )
         mosthosts = pandas.DataFrame( cursor.fetchall() )
 
-        # Add the spname column
-        def get_spname( row ):
-            if row['tns_name'] != 'None':
-                return row['tns_name']
-            elif row['iau_name'] != 'None':
-                return row['iau_name']
-            elif row['ptfiptf_name'] != 'None':
-                return row['ptfiptf_name']
-            else:
-                return row['snname']
-        spname = mosthosts.apply( get_spname, axis=1 )
+        spname = mosthosts.apply( self.get_spname, axis=1 )
         mosthosts['spname'] = spname
 
         # Change type of index to pandas Int64 so that it can be nullable
@@ -403,7 +409,7 @@ class MostHostsDesi(object):
         
     # ========================================
             
-    def find_main_targets( self, force_regen=False ):
+    def find_main_targets( self, radius=1./3600., force_regen=False ):
         """Search the DESI targets tables to match MostHosts to DESI main targets.
 
         Set force_regen=True to force searching the database.  Otherwise, it will read 
@@ -422,32 +428,28 @@ class MostHostsDesi(object):
         columns = {}
         for col in dfnoindex.columns:
             columns[col] = []
-        dbcols = [ 'survey', 'whenobs', 'targetid', 'desi_target', 'bgs_target', 'mws_target', 'scnd_target' ]
+        dbcols = [ 'm.snname', 'm.index', 'm.tns_name', 'm.iau_name', 'm.ptfiptf_name', 
+                   't.survey', 't.whenobs', 't.targetid',
+                   't.desi_target', 't.bgs_target', 't.mws_target', 't.scnd_target' ]
         for col in dbcols:
             columns[col] = []
             
         dbconn = self.connect_to_database()
         cursor = dbconn.cursor()
-        did = 0
-        for i, row in dfnoindex.iterrows():
-            if ( did % 1000 ) == 0:
-                self.logger.info( f'Searched DESI targets for {did} of {len(dfnoindex)} mosthosts, '
-                                  f'Have {len(columns["survey"])} targets so far' )
-            q = ( f"SELECT {','.join(dbcols)} "
-                  "FROM general.maintargets WHERE q3c_radial_query(ra,dec,%(ra)s,%(dec)s,1./3600.)" )
-            if did == 0:
-                self.logger.debug( cursor.mogrify( q, { 'ra': row["ra"], 'dec': row["dec"] } ) )
-            cursor.execute( q, { 'ra': row["ra"], 'dec': row["dec"] } )
-            results = cursor.fetchall()
-            for res in results:
-                for col in dfnoindex.columns:
-                    columns[col].append( row[col] )
-                for col in dbcols:
-                    columns[col].append( res[col] )
-            did += 1
-                    
-        self._maintargets = pandas.DataFrame( columns ).set_index( ['spname', 'index', 'survey',
-                                                                    'whenobs', 'targetid' ] )
+        
+        self.logger.info( f'Searching DESI targets for mosthosts' )
+        q = ( f"SELECT {','.join(dbcols)} "
+              f"FROM static.mosthosts m "
+              f"INNER JOIN general.maintargets t ON q3c_join(m.ra,m.dec,t.ra,t.dec,%(radius)s)" )
+        self.logger.debug( f"Sending query: {cursor.mogrify( q, { 'radius': radius } )}" )
+        cursor.execute( q, { 'radius': radius } )
+        rows = cursor.fetchall()
+        
+        self._maintargets = pandas.DataFrame( rows )
+        spnames = self._maintargets.apply( self.get_spname, axis=1 )
+        self._maintargets['spname'] = spnames
+        self._maintargets.set_index( ['snname', 'index', 'survey', 'whenobs', 'targetid'], inplace=True )
+
         # with open( cachefile, "wb" ) as ofp:
         #     pickle.dump( self._maintargets, ofp )
         self._maintargets.to_pickle( cachefile )
