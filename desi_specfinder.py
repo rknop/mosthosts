@@ -33,17 +33,30 @@ _desispecinfologger.setLevel( logging.DEBUG )
 class TargetNotFound(Exception):
     def __init__(self, message):
         self.message = message
-        
+
     def __str__(self):
         return self.message
 
 # ======================================================================
-    
+
 class SpectrumFinder(object):
     """Make one of these to find all desi spectra within 1" of a list of ra/dec
-    
-    Pass collection = daily, everest, fuji, or guadalupe  ("fujilupe" isn't currently supported)
-    
+
+    Uses the desispec library, so must be run with a DESI kernel (on
+    Jupyter) or in a DESI environment.  There is a hardcoded NERSC CFS
+    file path, so this is designed only to run at NERSC.
+
+    Create a SpectrumFinder object; do help(SpectrumFinder.__init__ for more information).
+
+, passing collection = daily, everest,
+    fuji, or guadalupe ("fujilupe" isn't currently supported) to the
+    constructor.  You must also pass the standard desipassword in
+    desipasswd.
+
+    Once you've instantiated an object information with the targetids
+    property, and with the info_for_targetid, get_spectra, filepath, and
+    get_spectrum methods.
+
     The _tiledata variable is not intended to be accessed remotely.  I want it to have the
     following columns:
        targetid
@@ -56,40 +69,45 @@ class SpectrumFinder(object):
        zwarn
        deltachi2
        filename
+
     """
 
     BASE_DIR = pathlib.Path( "/global/cfs/cdirs/desi/spectro/redux" ) 
     nameparse = re.compile('^(.*)/(zbest|redrock)(-[0-9]-[0-9]{2,6}-thru[0-9]{8}.fits)$' )
-    
+
     def __init__( self, ras, decs, radius=1./3600.,
                   names=None, desipasswd=None, collection='daily', logger=None ):
+        """Find DESI spectra at specific coordinates.
+
+        ras — list of RAs of objects, or a single RA
+        decs — list of Decs of objects, or a single Dec.  Length must match ras.
+        radius — Radius to match DESI spectra, in degrees.  Defaults to 1./3600 (i.e. 1")
+        names — (optional) list of names of objects, or name of the object.  Length must match ras.
+        desipasswd — (REQUIRED) the standard DESI password.
+        collection — The collection to search; must be "daily", "everest", fuji", or "guadalupe".  Defaults to "daily".
+        logger — (optional) A logging.logger object
+
+        After creating the object, see property targetids, and methods
+        info_for_targetid, get_spectra, filepath, and get_spectrum.
+
+        """
         global _desispecinfologger
 
-        # This is mostly to avoid SQL injection attacks...
         if collection not in { 'daily', 'everest', 'fuji', 'guadalupe' }:
             raise ValueError( f'Unknown collection "{collection}"' )
-        
+
         self.logger = _desispecinfologger if logger is None else logger
         self.radius = radius
         self.collection = collection
         self.ras = [ras] if numpy.isscalar(ras) else ras
         self.decs = [decs] if numpy.isscalar(decs) else decs
         self.names = list(range(len(self.ras))) if names is None else names
+        self.names = [self.names] if numpy.isscalar(self.names) else self.names
 
         self.inputdf = pandas.DataFrame( { 'name': self.names, 'ra': self.ras, 'dec': self.decs } )
-        
-        # mustclose = False
-        # if desidb is None:
-        #     mustclose = True
-        #     if desipasswd is None:
-        #         raise ValueError( "Must either pass a desidb or a desipasswd" )
-        #     desidb = psycopg2.connect( dbname='desidb', host='decatdb.lbl.gov', user='desi', password=desipasswd,
-        #                                cursor_factory=psycopg2.extras.RealDictCursor )
 
-        # self.engine = sa.create_engine( 'postgresql+psycopg2://', poolclass=sa.pool.StaticPool,
-        #                                 creator=lambda: desidb )
         self.engine = sa.create_engine( f'postgresql+psycopg2://desi:{desipasswd}@decatdb.lbl.gov:5432/desidb' )
-        
+
         self.logger.info( f'Looking for {collection} spectra at {len(self.inputdf)} positions '
                           f'w/in {self.radius}°.)' )
         self.logger.debug( f'Search table:\n{self.inputdf}' )
@@ -114,7 +132,7 @@ class SpectrumFinder(object):
             self.logger.debug( "Filling second temporary table..." )
             conn.execute( q, { "radius": self.radius } )
             self.logger.debug( "...filled" )
-            
+
             q = sa.sql.text( f"SELECT c.filename,sq.targetid,sq.tileid,sq.petal_loc,sq.device_loc,"
                              f"    c.night,sq.fiber,sq.mean_fiber_ra,sq.mean_fiber_dec,sq.target_ra,sq.target_dec,"
                              f"    z.z,z.zerr,z.zwarn,z.chi2,z.deltachi2,z.spectype,z.subtype,sq.name "
@@ -149,7 +167,7 @@ class SpectrumFinder(object):
     def targetids( self ):
         """A set of targetids that have spectra in everest"""
         return self._targetids
-    
+
     def targetids_for_name( self, name ):
         tmpdf = self._tiledata.reset_index()
         tmpdf = tmpdf[ tmpdf['name'] == name ]
@@ -157,9 +175,10 @@ class SpectrumFinder(object):
 
     def info_for_targetid( self, targetid ):
         """Returns a list of dicts.
-        
-        One element in the list for each spectrum found in everest for that targetid.
-        Each dict has z, zwarn, deltachi2, filename, tileid, petal_loc, device_loc, night
+
+        There is one element in the list for each spectrum found in for
+       that targetid.  Each dict has z, zwarn, deltachi2, filename,
+       tileid, petal_loc, device_loc, night
 
         """
         subframe = self._tiledata.xs( targetid, level=0 ).reset_index()
@@ -175,7 +194,7 @@ class SpectrumFinder(object):
 
     def get_spectra( self, targetid, smooth=0 ):
         """Returns a list of spectra for the given targetid.
-        
+
         Order of the list corresponds to the order you get from info_for_targetid.
 
         It returns a list because there might be multiple spectra for the same targetid.
@@ -209,10 +228,10 @@ class SpectrumFinder(object):
         if match is None:
             raise ValueError( f'Error parsing filename {spec["filename"]}' )
         return self.BASE_DIR / match.group(1) / f"coadd{match.group(3)}"
-    
+
     def get_spectrum( self, targetid, tile, petal, night, smooth=0 ):
         """Returns a desispec.spectra.Spectra object for the specified target/tile/petal/night.
-        
+
         You get the coadded cumulative spectrum.
 
         The only element of wave, flux, ivar should be 'brz', with the
@@ -241,5 +260,5 @@ class SpectrumFinder(object):
             # On the other hand, this WILL give you a feeling for the noise level
             # in the original spectrum, which is maybe what we want.
             spectrum.ivar['brz'][0,:] = scipy.ndimage.gaussian_filter1d( spectrum.ivar['brz'][0,:], smooth )
-        
+
         return spectrum

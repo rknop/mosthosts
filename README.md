@@ -3,39 +3,38 @@
 Libraries here include:
 
   * `mosthosts_desi.py` — for figuring out which Most Hosts objects have DESI targets and observations
-  * `desi_specinfo.py` — for actually getting the DESI spectrum of a Most Hosts host
+  * `desi_specfinder.py` — for loading a DESI spectrum at user-specified RA/Dec; uses the DESI-standard desisepc library
   * `mosthosts_skyportal.py` — link to the DESI SkyPortal [CURRENTLY BROKEN]
-  * `desi_findspec.py` — generic finding of DESI targets and spectra at RA/DEC
 
-## `mosthosts_desi.py` : Reading mosthosts and matching to DESI observations
+## `mosthosts_desi.py` : Reading mosthosts and matching to DESI targets and observations
 
-This library ``mosthosts_desi.py`` has a class that reads the mosthosts
-table into a Pandas dataframe, and then adds information for all of the
-hosts from the zbest_daily and public_fibermap DESI tables.  Look at
-that file for  documentation, or do:
+This library ``mosthosts_desi.py`` has a class that reads the mosthosts table into a Pandas dataframe, and then adds information for all of the hosts from the zbest_daily and public_fibermap DESI tables.  Look at that file for documentation, or do:
 
 ```
     from mostshost_desi import MostHostsDesi
     help(MostHostsDesi)
-````
+```
 
-The jupyter notebook ``specmatch.ipynb`` is an example of using this
-library.
+The jupyter notebook ``specmatch.ipynb`` is an example of using this library.
 
-## `desi_specinfo.py` : Finding spectra
+## `desi_specfinder.py` : Finding spectra at a given RA/Dec
 
-The library ``desi_specinfo.py`` is what you can use to pull out the
-spectra of a given mosthosts object.  It will only work on NERSC,
-because it assumes it has access to the DESI files that are on
-cfs there.
+For help, do:
+```
+    from desi_specfinder import SpectrumFinder
+    help(SpectrumFinder)
+```
 
-This spectrum uses some of the standard DESI software, so will only work
-if you've set up the DESI environment.  On Jupyter at NERSC, use the
-"DESI master" kernel.  (Indeed, I should really be using the DESI
-library better than I am right now.  Perhaps in a future version.)
+Examples of use are in the jupyter noteboos `desi_spec_at_radec.ipynb` and `desi_pullspec.ipynb`.
 
-To use it, import the file into your script.  Instantiate a SpectrumInfo
-object with:
+
+
+
+The library ``desi_specinfo.py`` is what you can use to pull out the spectra of a given mosthosts object.  It will only work on NERSC, because it assumes it has access to the DESI files that are on cfs there.
+
+This spectrum uses some of the standard DESI software, so will only work if you've set up the DESI environment.  On Jupyter at NERSC, use the "DESI master" kernel.  (Indeed, I should really be using the DESI library better than I am right now.  Perhaps in a future version.)
+
+To use it, import the file into your script.  Instantiate a SpectrumInfo object with:
 
 ```
     specinfo = SpecInfo( ra, dec, desipasswd='...' )

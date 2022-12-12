@@ -29,6 +29,7 @@ class MostHostsDesi(object):
     In cases where the same targetid/tile/petal is repeated more than
     once, just the values from the *latest* night are kept.
 
+    To get the actual spectra (i.e. the data), see `desi_specfinder.py`.
 
     ALL MOSTHOSTS DATAFRAME:
     
@@ -108,7 +109,7 @@ class MostHostsDesi(object):
 
     DATAFRAME OF DESI MAIN TARGETS
 
-    Access this with the maintargets DataFrame.  Only built if you run the find_main_targets() method.
+    Access this with the maintargets property.  Only built if you run the find_main_targets() method.
 
     The dataframe has *five* indices, because it's possible that the
     same MH target will show up more than once as a DESI target.
@@ -127,9 +128,6 @@ class MostHostsDesi(object):
     bgs_target — I *think* 0 means not in BGS
     mws_target — (Same 0 interp)
     scnd_target
-    # (this next column is not really there)
-    # targetfile — The name of the FITS file that this target information is from;
-    #        replace /targets/ with /global/cfs/cdirs/desi/target/ to find on NERSC
 
     '''
     
