@@ -195,6 +195,7 @@ class MostHostsDesi(object):
         '''
         global _mhdlogger
         self.logger = _mhdlogger if logger is None else logger
+        self.release = release
 
         self._dbuser = dbuser
         self._dbpasswd = dbpasswd
