@@ -1,14 +1,14 @@
-import { Mosthosts } from "./mosthosts.js"
+import { MostHosts } from "./mosthosts.js"
 
-Mosthosts.started = false;
-Mosthosts.init_interval = window.setInterval(
+MostHosts.started = false;
+MostHosts.init_interval = window.setInterval(
     function()
     {
         var requestdata, renderer;
         if ( document.readyState == "complete" ) {
-            if ( !Mosthosts.started ) {
-                Mosthosts.started = true;
-                window.clearInterval( Mosthosts.init_interval );
+            if ( !MostHosts.started ) {
+                MostHosts.started = true;
+                window.clearInterval( MostHosts.init_interval );
                 renderer = new MostHosts();
                 renderer.init();
             }

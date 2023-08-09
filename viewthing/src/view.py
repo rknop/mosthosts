@@ -108,7 +108,7 @@ class HandlerBase:
 
 class FrontPage(HandlerBase):
     def do_the_things( self ):
-        self.htmltop()
+        self.htmltop( includejsstart=True )
         self.response += "<p>Hello, world!</p>\n"
         self.htmlbottom()
         return self.response
@@ -120,9 +120,9 @@ class GetHosts(HandlerBase):
         self.jsontop()
         try:
             data = { 'min_hosts': None,
-                     'limit': 100,
+                     'numperpage': 100,
                      'offset': 0 }
-            # data.update( json.loads( web.data() ) )
+            data.update( json.loads( web.data() ) )
             conn = db.DB.engine.raw_connection()
             with conn.cursor( cursor_factory=psycopg2.extras.DictCursor ) as cursor:
                 q = ( "SELECT snname "
@@ -132,13 +132,13 @@ class GetHosts(HandlerBase):
                       "       GROUP BY snname ORDER BY snname ) subq " )
                 if data['min_hosts'] is not None:
                     q += "WHERE nhosts>%(minhosts)s "
-                if data['limit'] is not None:
+                if data['numperpage'] is not None:
                     q += "LIMIT %(limit)s "
                 if data['offset'] is not None:
                     q += "OFFSET %(offset)s "
 
                 cursor.execute( q, { 'minhosts': data['min_hosts'],
-                                     'limit': data['limit'],
+                                     'limit': data['numperpage'],
                                      'offset': data['offset'] } )
                 q = ( "SELECT snname,hostnum,sn_z,sn_ra,sn_dec,ra_dr9,dec_dr9,ra_sga,dec_sga, "
                       "  fracflux_g_dr9,fracflux_r_dr9,fracflux_z_dr9,"

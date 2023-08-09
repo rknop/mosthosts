@@ -36,7 +36,7 @@ rkWebUtil.wipeDiv = function( div )
 
 rkWebUtil.elemaker = function( elemtype, parent, inprops )
 {
-    var props = { text: null, dblclick: null, click: null, change:null, classes: null, attributes: null };
+    var props = { text: null, dblclick: null, click: null, change:null, classes: null, attributes: null, svg:false };
     Object.assign( props, inprops );
     var text = props.text
     var click = props.click;
@@ -46,8 +46,12 @@ rkWebUtil.elemaker = function( elemtype, parent, inprops )
     var attributes = props.attributes;
 
     var attr;
-    
-    var elem = document.createElement( elemtype );
+
+    var elem;
+    if ( props.svg )
+        elem = document.createElementNS( "http://www.w3.org/2000/svg", elemtype );
+    else
+        elem = document.createElement( elemtype );
     if ( parent != null) parent.appendChild( elem );
     if ( text != null )
         elem.appendChild( document.createTextNode( text ) );
