@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}RKWebutil Test{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='ap.css') }}">
+<script src="{{ url_for('static', filename='aes.js') }}"></script>
+<script src="{{ url_for('static', filename='jsencrypt.min.js') }}"></script>
+<script src="{{ url_for('static', filename='ap.js') }}" type="module") ></script>
+<script src="{{ url_for('static', filename='ap_start.js') }}" type="module"></script>
+{% endblock %}
+
+{% block body %}
+<h1>RKWebUtil Auth Test</h1>
+<div id="status-div" name="status-div"></div>
+
+{% if authenticated %}
+  <h2>Logged in</h2>
+  <p>You are logged in as {{ username }} ({{ userdisplayname }})</p>
+{% else %}
+  <h2>Not Logged In</h2>
+  <p>Log in to continue.</p>
+{% endif %}
+
+<div id="main-div">
+</div>
+
+{% endblock %}

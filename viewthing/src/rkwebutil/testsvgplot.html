@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="svgplot.css">
+  <title>Test SVGPlot</title>
+</head>
+
+<body>
+  <h1>Test SVGPlot</h1>
+
+  <a id="savesvg" href="" download="testsvgplot.svg">Save SVG</a>
+  
+  <script type="module">
+    var updateurl = function( svgplot )
+    {
+       let elem = document.getElementById( "savesvg" );
+       let svg = svgplot.getSVG( 800 );
+       var data = new Blob( [ svg ], { type: "image/svg+xml" } );
+       var url = window.URL.createObjectURL( data );
+       elem.href = url;
+    }
+    
+    import { SVGPlot} from "./svgplot.js";
+    
+    var svgplot = new SVGPlot.Plot( { "xtitle": "Test X Plot",
+                                      "ytitle": "Test Y Plot"} );
+    document.body.appendChild( svgplot.topdiv );
+    var dataset = new SVGPlot.Dataset( { x: [ 0.2, 0.4, 0.6, 0.8 ],
+                                         y: [ 0.7, 0.3, 0.5, 0.9 ],
+                                         marker: "square",
+                                         markercolor: "#0099ff",
+                                         markersize: 20 
+                                       } );
+    svgplot.addDataset( dataset );
+    updateurl( svgplot )
+    var button = document.createElement( "button" );
+    button.appendChild( document.createTextNode( "Redraw" ) );
+    document.body.appendChild( button );
+    button.addEventListener( "click", function() { updateurl( svgplot ); } );
+  </script>
+</body>
+</html>

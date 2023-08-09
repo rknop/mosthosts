@@ -1,0 +1,21 @@
+:root {
+    --link-color: #000066;
+    --link-decoration: underline;
+    --main-color: black;
+    --background-color: white;
+    --half-faded-color: #888888;
+    --some-faded-color: #666666;
+    --lots-faded-color: #aaaaaa;
+}
+
+body { color: var(--main-color); background: var(--background-color) }
+
+.link { color: var(--link-color);
+        text-decoration: var(--link-decoration);
+        cursor:pointer;
+      }
+
+.center { text-align: center; }
+
+.bold { font-weight: bold; }
+

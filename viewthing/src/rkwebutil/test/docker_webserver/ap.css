@@ -1,0 +1,30 @@
+:root {
+    --link-color: #000066;
+    --link-decoration: underline;
+    --main-color: black;
+    --half-faded-color: #888888;
+    --some-faded-color: #666666;
+    --highlight-color: #993333;
+    --full-color-border: black;
+    --mid-color-border: #999999;
+    --mostlyfull-color-border: #666666;
+    --embiggen-background: #bbbbbb;
+    --tooltip-background: #ffff66;
+    --tooltip-border: #0000ff;
+    --tooltip-color: black;
+    --good-color: #00c000;
+    --bad-color: #c00000;
+    --stack-color: #800080;
+    --stack-bg: #ffeeff;
+    --indiv-bg: #eeffee;
+    --warning-color: #c06040;
+}
+
+body { color: var(--main-color) }
+a { color: var(--link-color); text-decoration: var(--link-decoration); }
+
+.link { color: var(--link-color); text-decoration: var(--link-decoration); cursor: pointer; }
+.center { text-align: center; }
+.warn { font-weight: bold; font-style: italic; color: var(--warning-color) }
+.bold { font-weight: bold; }
+.aligntop { vertical-align: top; }

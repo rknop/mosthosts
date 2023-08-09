@@ -1,0 +1,9 @@
+--- wsgi.conf~  2020-12-08 01:14:56.000000000 +0000
++++ wsgi.conf   2022-01-22 04:41:13.324651536 +0000
+@@ -120,4 +120,6 @@
+
+         #WSGILazyInitialization On|Off
+
++    WSGIApplicationGroup %{GLOBAL}
++
+ </IfModule>
