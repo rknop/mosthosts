@@ -1,0 +1,3 @@
+[submodule "viewthing/src/rkwebutil"]
+	path = viewthing/src/rkwebutil
+	url = git@github.com:rknop/rkwebutil.git

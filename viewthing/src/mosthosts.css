@@ -24,6 +24,18 @@ body { color: var(--main-color); background: var(--background-color) }
 
 .halfsize { font-size: 50% }
 
+div.hbox { display: flex;
+           flex-direction: row;
+           min-width: 0;
+           min-height: 0;
+         }
+div.vbox { display: flex;
+           flex-direction: column;
+           min-width: 0;
+           min-height: 0; }
+
+div.borderbox { margin: 1ex; padding: 1ex; border: 2px solid var(--main-color) }
+
 tab.inputlayout { border: none; padding: none; margin: none }
 tab.inputlayout tr { padding-top: 0.5ex; padding-bottom: 0.5ex }
 tab.inputlayout td { padding-left: 0.5ex; padding-right: 0.5ex }

@@ -118,28 +118,48 @@ class FrontPage(HandlerBase):
 class GetHosts(HandlerBase):
     def do_the_things( self ):
         self.jsontop()
+        conn = None
         try:
-            data = { 'min_hosts': None,
-                     'numperpage': 100,
-                     'offset': 0 }
+            data = { 'snlist': None,
+                     'minnhosts': None,
+                     'numperpage': None,
+                     'offset': None }
             data.update( json.loads( web.data() ) )
             conn = db.DB.engine.raw_connection()
             with conn.cursor( cursor_factory=psycopg2.extras.DictCursor ) as cursor:
+                interpolates = {}
                 q = ( "SELECT snname "
-                      "INTO TEMP TABLE temp_snname "
+                      "INTO TEMP TABLE temp_all_snname "
                       "FROM ( SELECT snname,COUNT(hostnum) AS nhosts "
                       "       FROM static.mosthosts_pre "
                       "       GROUP BY snname ORDER BY snname ) subq " )
-                if data['min_hosts'] is not None:
+                if data['snlist'] is not None:
+                    q += "WHERE snname IN %(snlist)s"
+                    interpolates["snlist"] = tuple( data["snlist"] )
+                elif data['minnhosts'] is not None:
                     q += "WHERE nhosts>%(minhosts)s "
-                if data['numperpage'] is not None:
-                    q += "LIMIT %(limit)s "
-                if data['offset'] is not None:
-                    q += "OFFSET %(offset)s "
+                    interpolates["minhosts"] = data[ "minnhosts" ]
+                cursor.execute( q, interpolates )
 
-                cursor.execute( q, { 'minhosts': data['min_hosts'],
-                                     'limit': data['numperpage'],
-                                     'offset': data['offset'] } )
+                q = "SELECT COUNT(snname) AS nsn FROM temp_all_snname"
+                cursor.execute( q )
+                row = cursor.fetchone()
+                ntotal = row['nsn']
+
+                interpolates = {}
+                if ( data['numperpage'] is not None ) or ( data['offset'] is not None):
+                    q = ( "SELECT snname INTO TEMP TABLE temp_snname "
+                          "FROM ( SELECT snname FROM temp_all_snname ) subq " )
+                    if data['numperpage'] is not None:	
+                        q += "LIMIT %(limit)s "
+                        interpolates["limit"] = data[ "numperpage" ]
+                    if data['offset'] is not None:
+                        q += "OFFSET %(offset)s "
+                        interpolates["offset"] = data[ "offset" ]
+                else:
+                    q = ( "ALTER TABLE temp_all_snname RENAME TO temp_snname" )
+                cursor.execute( q, interpolates )
+                
                 q = ( "SELECT snname,hostnum,sn_z,sn_ra,sn_dec,ra_dr9,dec_dr9,ra_sga,dec_sga, "
                       "  fracflux_g_dr9,fracflux_r_dr9,fracflux_z_dr9,"
                       "  fracflux_w1_dr9,fracflux_w2_dr9,fracflux_w3_dr9,fracflux_w4_dr9 "
@@ -166,10 +186,13 @@ class GetHosts(HandlerBase):
                 if cursn is not None:
                     sne.append( cursndata )
 
-                return json.dumps( { 'status': 'ok', 'sne': sne } )
+                return json.dumps( { 'status': 'ok', 'ntotal': ntotal, 'sne': sne } )
         except Exception as ex:
             sys.stderr.write( f"Exception in {self.__class__}: {ex}\n" )
             return logerr( self.__class__, ex )
+        finally:
+            if conn is not None:
+                conn.rollback()
 
 # ======================================================================
 

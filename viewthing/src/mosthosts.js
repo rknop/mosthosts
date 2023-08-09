@@ -26,10 +26,46 @@ MostHosts.prototype.render = function() {
 
     if ( this.frontpagediv == null ) {
         this.frontpagediv = rkWebUtil.elemaker( "div", null );
-        let tab = rkWebUtil.elemaker( "table", this.frontpagediv, { "classes": [ "inputlayout" ] } );
-        let tr = rkWebUtil.elemaker( "tr", tab );
 
-        let td = rkWebUtil.elemaker( "td", tr, { "text": "Number per page:" } )
+        this.whichtoshow = rkWebUtil.elemaker( "select", this.frontpagediv );
+        rkWebUtil.elemaker( "option", this.whichtoshow, 
+                            { "attributes": { "value": "list", "selected": "selected" },
+                              "text": "List of Specific SNe" } )
+        rkWebUtil.elemaker( "option", this.whichtoshow,
+                            { "attributes": { "value": "many" },
+                              "text": "All that satisfy...." } );
+        rkWebUtil.elemaker( "br", this.frontpagediv );
+        
+        this.listdiv = rkWebUtil.elemaker( "div", this.frontpagediv );
+        rkWebUtil.elemaker( "p", this.listdiv,
+                            { "text": "Names of SNe to show (comma or space separated)" } );
+        this.snlist = rkWebUtil.elemaker( "input", this.listdiv,
+                                          { "attributes": { "type": "text",
+                                                            "size": 80 } } );
+        rkWebUtil.elemaker( "br", this.listdiv );
+        rkWebUtil.button( this.listdiv, "show", function( e ) { self.showThings(); } );
+        
+        this.criteriondiv = rkWebUtil.elemaker( "div", null );
+        let tab = rkWebUtil.elemaker( "table", this.criteriondiv, { "classes": [ "inputlayout" ] } );
+
+        let tr = rkWebUtil.elemaker( "tr", tab );
+        let td = rkWebUtil.elemaker( "td", tr );
+        this.usenhosts = rkWebUtil.elemaker( "input", td,
+                                             { "attributes": { "id": "criterion-usenhosts",
+                                                               "type": "checkbox" } } );
+        td = rkWebUtil.elemaker( "td", tr );
+        rkWebUtil.elemaker( "label", td, { "text": "Min n. Hosts:",
+                                           "attributes": { "for": "criterion-usenhosts" } } );
+        td = rkWebUtil.elemaker( "td", tr );
+        this.minnhosts = rkWebUtil.elemaker( "input", td, { "attributes": { "type": "number",
+                                                                            "min": 1,
+                                                                            "max": 10,
+                                                                            "value": 3,
+                                                                            "step": 1 } } );
+        
+        tr = rkWebUtil.elemaker( "tr", tab );
+        td = rkWebUtil.elemaker( "td", tr );
+        td = rkWebUtil.elemaker( "td", tr, { "text": "Number per page:" } )
         td = rkWebUtil.elemaker( "td", tr );
         this.numperpage = rkWebUtil.elemaker( "input", td,
                                               { "attributes": { "type": "number",
@@ -37,7 +73,9 @@ MostHosts.prototype.render = function() {
                                                                 "max": 500,
                                                                 "value": 20,
                                                                 "step": 1 } } );
+
         tr = rkWebUtil.elemaker( "tr", tab );
+        td = rkWebUtil.elemaker( "td", tr );
         td = rkWebUtil.elemaker( "td", tr, { "text": "Starting Offset:" } )
         td = rkWebUtil.elemaker( "td", tr );
         this.pageoffset = rkWebUtil.elemaker( "input", td,
@@ -48,6 +86,22 @@ MostHosts.prototype.render = function() {
         tr = rkWebUtil.elemaker( "tr", tab );
         td = rkWebUtil.elemaker( "td", tr );
         rkWebUtil.button( td, "Show", function( e ) { self.showThings(); } );
+
+        this.whichtoshow.addEventListener(
+            "change",
+            function( e ) {
+                if ( self.whichtoshow.value == "list" ) {
+                    if ( self.frontpagediv.contains( self.criteriondiv ) )
+                        self.frontpagediv.removeChild( self.criteriondiv );
+                    self.frontpagediv.appendChild( self.listdiv );
+                } else {
+                    if ( self.frontpagediv.contains( self.listdiv ) )
+                        self.frontpagediv.removeChild( self.listdiv );
+                    self.frontpagediv.appendChild( self.criteriondiv );
+                }
+            }
+        );
+
     }
 
     this.maindiv.appendChild( this.frontpagediv );
@@ -77,23 +131,103 @@ MostHosts.shower.prototype.render = function() {
     var self = this;
     
     rkWebUtil.wipeDiv( this.maindiv );
+
+    let hbox = rkWebUtil.elemaker( "div", this.maindiv, { "classes": [ "hbox" ] } );
+
+    let vbox = rkWebUtil.elemaker( "div", hbox, { "classes": [ "vbox", "borderbox" ] } );
+
+    let p = rkWebUtil.elemaker( "p", vbox,
+                                { "text": "Back to main page",
+                                  "classes": [ "link" ],
+                                  "click": (e) => { parent.render(); } } );
+
+    let snlist = null;
+    this.offset = null;
+    this.numperpage = null;
+    let minnhosts = null;
     
-    let offset = this.parent.pageoffset.value;
-    let numperpage = this.parent.numperpage.value;
-
-    rkWebUtil.elemaker( "p", this.maindiv, { "text": "Showing " + numperpage +
-                                             " SNe per page at offset " + offset  } );
-    let p = rkWebUtil.elemaker( "p", this.maindiv );
-    if ( offset > 0 ) {
-        rkWebUtil.button( p, "Previous " + numperpage, function( e ) { window.alert( "Not implemented" ) } );
+    if ( this.parent.whichtoshow.value == "list" ) {
+        snlist = this.parent.snlist.value.strip().split( /[ ,]+/ );
     }
-    rkWebUtil.button( p, "Next " + numperpage, function( e ) { window.alert( "Not implemented" ) } );
+    else {
+        this.offset = this.parent.pageoffset.value;
+        this.numperpage = this.parent.numperpage.value;
+        if ( this.parent.usenhosts.checked ) {
+            minnhosts = this.parent.minnhosts.value;
+        }
+    }
 
+    this.totnumsne = rkWebUtil.elemaker( "span", null );
+    if ( snlist != null ) {
+        p = rkWebUtil.elemaker( "p", vbox, { "text": "Showing " + snlist.length + " of " } );
+        p.appendChild( this.totnumsne );
+        p.appendChild( document.createTextNode( " SNe" ) );
+    }
+    else {
+        p = rkWebUtil.elemaker( "p", vbox, { "text": "Showing " + this.numperpage + " SNe ( of " } );
+        p.appendChild( this.totnumsne );
+        p.appendChild( document.createTextNode( " total) per page at offset " + this.offset ) );
+    }
+    p = rkWebUtil.elemaker( "p", vbox );
+    this.nextbutton = null;
+    this.prevbutton = null;
+    if ( this.offset != null ) {
+        if (this. offset > 0 )  {
+            this.prevbutton = rkWebUtil.button( p, "Previous " + this.numperpage,
+                                                function( e ) { window.alert( "Not implemented" ) } );
+        }
+        this.nextbutton = rkWebUtil.button( p, "Next " + this.numperpage,
+                                            function( e ) { window.alert( "Not implemented" ) } );
+    }
+
+    vbox = rkWebUtil.elemaker( "div", hbox, { "classes": [ "vbox" ] } );
+    p = rkWebUtil.elemaker( "p", vbox, "Reject hosts if " );
+    this.anyall = rkWebUtil.elemaker( "select", p,
+                                      { "change": (e) => { self.updateHostColors() } } );
+    rkWebUtil.elemaker( "option", this.anyall, { "attributes": { "value": "any", "selected": "selected" },
+                                                 "text": "any" } );
+    rkWebUtil.elemaker( "option", this.anyall, { "attributes": { "value": "all" }, "text": "all" } );
+    p.appendChild( document.createTextNode( " of:" ) );
+
+    let tab = rkWebUtil.elemaker( "table", vbox, { "classes": [ "inputlayout" ]} );
+    
+    this.use_fracflux = {};
+    this.fracfluxltgt = {};
+    this.fracflux = {};
+    for ( let filt of [ 'g', 'r' ] ) {
+        let tr = rkWebUtil.elemaker( "tr", tab );
+        let td = rkWebUtil.elemaker( "td", tr );
+        let use_fracflux = rkWebUtil.elemaker( "input", td, { "attributes": { "type": "checkbox",
+                                                                              "id": "use-fracflux-" + filt },
+                                                              "change": (e) => { self.updateHostColors() } } );
+        rkWebUtil.elemaker( "label", td, { "attributes": { "for": "use-fracflux-" + filt }, "text": "use?" } );
+        td = rkWebUtil.elemaker( "td", tr, { "text": "fracflux_" + filt + "_dr9" } );
+        td = rkWebUtil.elemaker( "td", tr );
+        let fracfluxltgt = rkWebUtil.elemaker( "select", td, { "change": (e) => { self.updateHostColors() } } );
+        rkWebUtil.elemaker( "option", fracfluxltgt, { "text": ">",
+                                                      "attributes": { "value": ">",
+                                                                      "selected": "selected" } } );
+        rkWebUtil.elemaker( "option", fracfluxltgt, { "text": "<", "attributes": { "value": "<" } } );
+        td = rkWebUtil.elemaker( "td", tr );
+        let fracflux = rkWebUtil.elemaker( "input", td, { "attributes": { "type": "number", "value": "1.0" },
+                                                           "change": (e) => { self.updateHostColors() } } );
+
+        this.use_fracflux[filt] = use_fracflux;
+        this.fracfluxltgt[filt] = fracfluxltgt;
+        this.fracflux[filt] = fracflux;
+    }
+
+    
     rkWebUtil.elemaker( "hr", this.maindiv );
     this.paneldiv = rkWebUtil.elemaker( "div", this.maindiv, { "text": "...loading..." } );
-    
-    this.connector.sendHttpRequest( "gethosts", { "numperpage": numperpage, "offset": offset },
-                                    function( data ) { self.showImages( data ) } );
+
+    this.connector.sendHttpRequest( "gethosts",
+                                    { "snlist": snlist,
+                                      "minnhosts": minnhosts,
+                                      "numperpage": this.numperpage,
+                                      "offset": this.offset },
+                                    function( data ) { self.showImages( data ) }
+                                  );
 }
 
 // **********************************************************************
@@ -106,13 +240,18 @@ MostHosts.shower.prototype.showImages = function( data ) {
     this.divs = {};
     this.svgs = {};
     this.imgs = {};
-
+    this.hostcircles = {};
+    
     var clipsize = 30;
     var imgscale = 4;
 
     var legacysurveydelay = 200;
     
     rkWebUtil.wipeDiv( this.paneldiv );
+
+    this.totnumsne.innerHTML = data['ntotal'];
+    if ( this.offset + this.numperpage > this.totnumsne )
+        this.nextbutton.style.display = "none"
     
     for ( let sn of data.sne ) {
         this.sne.push( sn.snname );
@@ -149,6 +288,9 @@ MostHosts.shower.prototype.showImages = function( data ) {
                                               "y2": clipsize/2. + 1 },
                               "classes": [ "sn" ],
                               "svg": true } )
+
+        this.hostcircles[ sn.snname ] = [];
+        
         for ( let host of sn.hosts ) {
             let ra = host.ra_dr9;
             let dec = host.dec_dr9;
@@ -162,12 +304,13 @@ MostHosts.shower.prototype.showImages = function( data ) {
             let sndec = parseFloat( sn.sn_dec );
             let dra = ( ( ra - snra ) * Math.cos( dec * Math.PI / 180. ) ) * 3600.;
             let ddec = ( dec - sndec ) * 3600.;
-            rkWebUtil.elemaker( "circle", svg,
-                                { "attributes": { "cx": clipsize/2. - dra,
-                                                  "cy": clipsize/2. - ddec,
-                                                  "r": 1.5 },
-                                  "classes": [ "goodhost" ],
-                                  "svg": true } );
+            let circle = rkWebUtil.elemaker( "circle", svg,
+                                             { "attributes": { "cx": clipsize/2. - dra,
+                                                               "cy": clipsize/2. - ddec,
+                                                               "r": 1.5 },
+                                               "classes": [ "goodhost" ],
+                                               "svg": true } );
+            this.hostcircles[ sn.snname ].push( circle );
         }
 
 
@@ -175,7 +318,8 @@ MostHosts.shower.prototype.showImages = function( data ) {
         this.divs[ sn.snname ] = div;
         this.svgs[ sn.snname ] = svg;
     }
-
+    this.updateHostColors();
+    
     // To avoid sending too many requests too fast, spread them out
 
     let getimage = function( sndex ) {
@@ -194,6 +338,38 @@ MostHosts.shower.prototype.showImages = function( data ) {
     if ( this.sne.length > 0 ) getimage( 0 );
 }
     
+// **********************************************************************
+
+MostHosts.shower.prototype.updateHostColors = function() {
+    let anynotall = ( this.anyall.value == "any" );
+    for ( let sn of this.data.sne ) {
+        for ( let hostnum in sn.hosts ) {
+            let anygood = false;
+            let allgood = true;
+            for ( let filt in this.fracflux ) {
+                if ( this.use_fracflux[filt].checked ) {
+                    let cutoff = this.fracflux[filt].value;
+                    let val = sn.hosts[hostnum]["fracflux_" + filt + "_dr9"]
+                    if ( ( ( this.fracfluxltgt[filt].value == "<" ) && ( val < cutoff ) )
+                         ||
+                         ( ( this.fracfluxltgt[filt].value == ">" ) && ( val > cutoff ) )
+                       ) {
+                        allgood = false;
+                    }
+                    else {
+                        anygood = true;
+                    }
+
+                }
+            }
+            let bad = ( anynotall && (!allgood) ) || ( (!anynotall) && (!anygood) );
+            let circ = this.hostcircles[ sn.snname ][ hostnum ]
+            circ.classList.remove( ...circ.classList );
+            circ.classList.add( bad ? "badhost" : "goodhost" );
+        }
+    }
+}
+
 // **********************************************************************
 
 export { MostHosts }
