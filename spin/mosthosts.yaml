@@ -2,8 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    workload.user.cattle.io/workloadselector: deployment-mosthosts-mosthosts-viewthing
-  name: mosthosts-viewthing
+    workload.user.cattle.io/workloadselector: deployment-mosthosts-mosthosts
+  name: mosthosts
   namespace: mosthosts
 spec:
   progressDeadlineSeconds: 600
@@ -11,7 +11,7 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      workload.user.cattle.io/workloadselector: deployment-mosthosts-mosthosts-viewthing
+      workload.user.cattle.io/workloadselector: deployment-mosthosts-mosthosts
   strategy:
     rollingUpdate:
       maxSurge: 1
@@ -20,12 +20,12 @@ spec:
   template:
     metadata:
       labels:
-        workload.user.cattle.io/workloadselector: deployment-mosthosts-mosthosts-viewthing
+        workload.user.cattle.io/workloadselector: deployment-mosthosts-mosthosts
     spec:
       containers:
-      - image: rknop/mosthosts-viewthing
+      - image: rknop/mosthosts
         imagePullPolicy: Always
-        name: mosthosts-viewthing
+        name: mosthosts
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false
@@ -44,7 +44,7 @@ spec:
         tty: true
         volumeMounts:
         - mountPath: /secrets
-          name: mosthosts-viewthing-secret
+          name: mosthosts-secret
         - mountPath: /html
           name: htmldir
         - mountPath: /sessions
@@ -57,16 +57,16 @@ spec:
         fsGroup: 45703
       terminationGracePeriodSeconds: 30
       volumes:
-      - name: mosthosts-viewthing-secret
+      - name: mosthosts-secret
         secret:
           defaultMode: 256
           optional: false
-          secretName: mosthosts-viewthing-secret
+          secretName: mosthosts-secret
       - hostPath:
-          path: /global/cfs/cdirs/desi/users/raknop/mosthosts_viewthing/html
+          path: /global/cfs/cdirs/desi/users/raknop/www_mosthosts/html
           type: Directory
         name: htmldir
       - hostPath:
-          path: /global/cfs/cdirs/desi/users/raknop/mosthosts_viewthing/sessions
+          path: /global/cfs/cdirs/desi/users/raknop/www_mosthosts/sessions
           type: Directory
         name: sessionsdir

@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: mosthosts-viewthing-ingress
+  name: mosthosts-ingress
   namespace: mosthosts
 spec:
   ports:
@@ -9,7 +9,7 @@ spec:
     protocol: TCP
     targetPort: 8080
   selector:
-    workload.user.cattle.io/workloadselector: deployment-mosthosts-mosthosts-viewthing
+    workload.user.cattle.io/workloadselector: deployment-mosthosts-mosthosts
   sessionAffinity: None
   type: ClusterIP
 status:
