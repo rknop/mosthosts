@@ -1,6 +1,10 @@
+import os
+import pathlib
 import astropy.table
 from astropy.io import fits
 import sqlalchemy as sa
+
+_rundir = pathlib.Path( __file__ ).parent
 
 columns = [
     'SGA_ID',
@@ -38,13 +42,16 @@ columns = [
 ]
 
 
-with fits.open( "/global/cscratch1/sd/raknop/SGA-2020.fits" ) as sga:
+with fits.open( _rundir.parent / "extern_data/SGA-2020.fits" ) as sga:
     tab = astropy.table.Table( sga[1].data )[columns]
 df = tab.to_pandas()
 
 lcer = { i: i.lower() for i in columns }
 df.rename( lcer, inplace=True, axis=1 )
 
-engine = sa.create_engine( f'postgresql://desidb_admin:kqy1n02rnhg2@decatdb.lbl.gov:5432/desidb' )
+with open( pathlib.Path(os.getenv("HOME")) / "secrets/decatdb_desi_admin" ) as ifp:
+    passwd = ifp.readline().strip()
+
+engine = sa.create_engine( f'postgresql://desidb_admin:{passwd}@decatdb.lbl.gov:5432/desidb' )
 
 df.to_sql( 'sga', schema='static', if_exists='append', con=engine, index=False )
