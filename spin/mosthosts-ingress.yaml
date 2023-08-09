@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mosthosts-viewthing
+  namespace: mosthosts
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 500m
+spec:
+  rules:
+  - host: mosthosts-viewthing.mosthosts.production.svc.spin.nersc.org
+    http:
+      paths:
+      - backend:
+          service:
+            name: mosthosts-viewthing-ingress
+            port:
+              number: 8080
+        pathType: ImplementationSpecific
+  tls:
+  - hosts:
+    - decat-upload.decat-archive.development.svc.spin.nersc.org
