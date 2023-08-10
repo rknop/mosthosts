@@ -16,6 +16,16 @@ spec:
             port:
               number: 8080
         pathType: ImplementationSpecific
-#  tls:
-#  - hosts:
-#    - decat-upload.decat-archive.development.svc.spin.nersc.org
+  - host: mosthosts.lbl.gov
+    http:
+      paths:
+      - backend:
+          service:
+            name: mosthosts-ingress
+            port:
+              number: 8080
+        pathType: ImplementationSpecific
+  tls:
+  - hosts:
+    - mosthosts.lbl.gov
+    secretName: mosthosts-cert

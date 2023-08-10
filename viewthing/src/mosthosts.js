@@ -180,8 +180,8 @@ MostHosts.shower.prototype.render = function() {
                                             function( e ) { window.alert( "Not implemented" ) } );
     }
 
-    vbox = rkWebUtil.elemaker( "div", hbox, { "classes": [ "vbox" ] } );
-    p = rkWebUtil.elemaker( "p", vbox, "Reject hosts if " );
+    vbox = rkWebUtil.elemaker( "div", hbox, { "classes": [ "vbox", "borderbox" ] } );
+    p = rkWebUtil.elemaker( "p", vbox, { "text": "Reject hosts if " } );
     this.anyall = rkWebUtil.elemaker( "select", p,
                                       { "change": (e) => { self.updateHostColors() } } );
     rkWebUtil.elemaker( "option", this.anyall, { "attributes": { "value": "any", "selected": "selected" },
