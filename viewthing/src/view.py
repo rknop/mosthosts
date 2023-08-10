@@ -137,7 +137,7 @@ class GetHosts(HandlerBase):
                     q += "WHERE snname IN %(snlist)s"
                     interpolates["snlist"] = tuple( data["snlist"] )
                 elif data['minnhosts'] is not None:
-                    q += "WHERE nhosts>%(minhosts)s "
+                    q += "WHERE nhosts>=%(minhosts)s "
                     interpolates["minhosts"] = data[ "minnhosts" ]
                 cursor.execute( q, interpolates )
 

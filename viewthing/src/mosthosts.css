@@ -24,6 +24,14 @@ body { color: var(--main-color); background: var(--background-color) }
 
 .halfsize { font-size: 50% }
 
+.twothirdsize { font-size: 67% }
+
+.threeqsize { font-size: 75% }
+
+.emmarginleft { margin-left: 1em }
+
+.emmargintop { margin-top: 1em }
+
 div.hbox { display: flex;
            flex-direction: row;
            min-width: 0;
