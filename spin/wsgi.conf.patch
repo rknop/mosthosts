@@ -5,6 +5,6 @@
          #WSGILazyInitialization On|Off
 
 +    WSGIApplicationGroup %{GLOBAL}
-+    WSGIApplicationGroup viewthing
++    WSGIDaemonProcess viewthing
 +
  </IfModule>

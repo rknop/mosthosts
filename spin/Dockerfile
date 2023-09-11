@@ -28,6 +28,14 @@ RUN patch /etc/apache2/mods-available/wsgi.conf /usr/src/wsgi.conf.patch
 
 RUN ln -s ../mods-available/rewrite.load /etc/apache2/mods-enabled/rewrite.load
 
+# The wsgi process group daemon thingy wasn't starting without
+# the UID I run on spin as being defined.
+RUN mkdir /home/raknop
+RUN chown 95089:95089 /home/raknop
+RUN echo "raknop:x:95089:95089:Rob Knop,,,:/home/raknop:/bin/bash" >> /etc/passwd
+RUN echo "raknop:x:95089:" >> /etc/group
+RUN echo "desi:x:57102:" >> /etc/group
+
 # Do scary permissions stuff since we'll have to run
 #  as a normal user.  But, given that we're running as
 #  a normal user, that makes this less scary.
@@ -38,6 +46,7 @@ RUN chmod a+rwx /var/lock/apache2
 RUN chmod -R a+rx /etc/ssl/private
 RUN mkdir -p /var/log/apache2
 RUN chmod -R a+rwx /var/log/apache2
+RUN chmod -R a+rwx /etc/apache2
 
 RUN apachectl start
 
