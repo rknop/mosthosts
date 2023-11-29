@@ -5,7 +5,6 @@ import pathlib
 import pickle
 import logging
 import argparse
-import ast
 import psycopg2
 import psycopg2.extras
 import numpy as np
@@ -30,117 +29,132 @@ class MostHostsDesi(object):
     once, just the values from the *latest* night are kept.
 
     To get the actual spectra (i.e. the data), see `desi_specfinder.py`.
+    
+    MOSTHOSTS TABLE:
 
-    ALL MOSTHOSTS DATAFRAME:
+    The basic mosthosts table (without any desi observations) is in the mosthosts property.
+
+    ALL MOSTHOSTS DATAFRAME WITH REDSHIFTS:
     
     Access the dataframe with the df property.  It has one row for each host in the Mosthosts table.
     
-    The dataframe has two indexes:
-    
-    snname — the primary snname from the mosthosts table.  These names are heterogeneous.
-    index — a counter starting from 1 for SNe from mosthosts that have more than one host.
-    
-    It has columns:
-    
-    spname — the name used for skyportal.  This will be the TNS name if it exists,
-             else the IAU name if it exists, else the PTFIPTF name if it exists,
-             else snname
-    ra — ra of the host (degrees)
-    dec — dec of the host (degrees)
-    pmra —
-    pmdec —
-    ref_epoch —
-    override —
-    index —
-    hemisphere — "north" or "south" (or "unknown")
-    sn_ra — ra of the SN this is a possible host for (degrees)
-    sn_dec — dec of the SN this is a possible host for (degrees)
-    sn_z — redshift of the supernova (probably determined in a heterogenous manner...)
-    program — a set of /-separated tags indicating where this SN came from
-    priority —
-    tns_name — Name of the SN on TNS
-    iau_name — IAU name for the SN
-    ptfiptf_name — Name from the Palomar Transient Factory for this SN
-
-    The remaining columns come from the DESI data, pulled from the tiles_redshifts and cumulative_tiles tables.
-
-    z — variance-weighted average of the nowarn DESI redshifts for this host, or null if none
-    dz — uncertainty on z
-    zdisp — Max-min of the individual z values observed for this host
-    
-    If you want to drill into where this z came from, look at the haszdf table
-
-
     DATAFRAME OF DESI OBSERVATIONS OF HOSTS
 
-    This one captures which hosts have been observed by DESI.  It does
-    not list each and every separate observation (as it uses DESI's
-    coadded spectra), but it does list separate obvations of hosts with
-    different tile and/or target ids.  (That is: DESI sometimes puts the
-    same RA/DEC into different targets and tiles.  This dataframe
-    doesn't combine them.  However, it read the DESI cumulative files,
-    so multiple observations tagged with the same tile and target for a
-    given host had their spectra combined before the redshifts was
-    measured.)
+    Access the dataframe with the haszdf property.  It potentially has
+    multiple rows for a given host from the Mosthosts table, but only
+    includes hosts that have at least one DESI observation.
 
-    This dataframe omits MostHosts hosts that have no desi observations.
+    DATAFRAME OF DESI MAIN TARGETS OF MOSTHOSTS HOSTS
 
-    Access the dataframe with the haszdf property
-
-    This dataframe has *six* indices:
-
-    spname — same as from df
-    index — same as from df
-    targetid — targetid from the DESI database
-    tileid — tileid from the DESI database
-    petal — petal from the DESI database
-    night — night from the DESI database
-
-    Columns are the basic MostHosts columns from df, plus:
-
-    z — Redshift for this observation
-    zerr — Uncertainty on redshift for this observation
-    zwarn — If this isn't 0, you probably shouldn't trust the redshift
-    chi2 —
-    deltachi2 —
-    spectype —
-    subtype —
-
-
-    DATAFRAME OF DESI MAIN TARGETS
-
-    Access this with the maintargets property.  Only built if you run the find_main_targets() method.
-
-    The dataframe has *five* indices, because it's possible that the
-    same MH target will show up more than once as a DESI target.
-
-    snnamne — same as from df
-    index — same as from df
-    survey — one of "main", "sv1", "sv2", "sv3", or "backup"
-          NOTE --- CURRENTLY ONLY SEARCHES THE MAIN SURVEY, so this will always be "main"
-    whenobs — one of "bright" or "dark"
-    targetid — DESI target id.
-
-    Columns are the basic MostHosts columns from df, plus:
-
-    spname — same as from df
-    desi_target — not sure why this isn't the same as targetid, but whatever
-    bgs_target — I *think* 0 means not in BGS
-    mws_target — (Same 0 interp)
-    scnd_target
+    Access this with the maintargets property.
 
     '''
+
+    _mosthosts_table = 'mosthosts_20230823'
+    
+    @property
+    def mosthosts( self ):
+        """The MostHosts table as a pandas dataframe.
+
+        Indexed by (sn_name_sp, hostnum).
+
+        Has lots of columns
+        """
+        return self._mosthosts
     
     @property
     def df( self ):
+        """A pandas dataframe with summary information about desi observations of MostHosts hosts.
+
+        Indexed by (sn_name_sp, hostnum) ; these indexes match what's in
+        the mosthosts property.
+
+        Has columns:
+
+        ra: ra of host
+        dec: dec of host
+        sn_ra: ra of sn
+        sn_dec: dec of sn
+        sn_z: redshift of sn
+        z: variance-weighted average of the nowarn DESI redshifts for this host, or null if none
+        dz: uncertainty on z (estimated somehow)
+        zdisp: Max-min of the individual z values observed for this host
+
+        If you want to drill into where this z came from, look at the
+        haszdf table.  Only redshifts with zwarn=0 are included in the
+        calculation of z, dz, and zdisp for this table.
+
+        """
         return self._df
     
     @property
     def haszdf( self ):
+        """A pandas dataframe summarizing all DESI observations of mosthosts targets.
+
+        Built from the coadded spectra, so it won't have each and every
+        separate observation,but it will separately lists different
+        observations of the same host with different tile and/or target
+        IDs.  (That is: DESI sometimes puts the same RA/DEC into
+        different targets and tiles.  This dataframe doesn't combine
+        them.  However, it read the DESI cumulative files, so multiple
+        observations tagged with the same tile and target for a given
+        host had their spectra combined before the redshifts was
+        measured.)  MostHosts that don't have DESI observations won't
+        appear in this table.
+
+        This dataframe has *six* indices
+
+        sn_name_sp : same as from mosthosts and df
+        hostnum : same as from mosthosts and df
+        targetid : targetid from the DESI database
+        tileid : tileid from the DESI database
+        petal : petal from the DESI database
+        night : night from the DESI database
+
+        Columns include:
+
+        ra: ra of host
+        dec: dec of host
+        sn_ra: ra of sn
+        sn_dec: dec of sn
+        sn_z: redshift of sn
+        z: redshift for this observation
+        zerr: undertainty on redshift for this observation
+        zwarn: If this isn't0, you probably shouldn't trust the redshift
+        chi2:
+        deltachi2:
+        spectype:
+        subtype:
+
+        """
         return self._haszdf
 
     @property
     def maintargets( self ):
+        """Pandas dataframe of DESI main targets for MostHosts hosts.
+
+        Access this with the maintargets property.  By default, it will
+        read the "mosthosts_desi_maintargets.pkl" file if that exists.
+        If you want to rebuild this file, call the find_main_targets()
+        method with force_regen=True.
+
+        The dataframe has *five* indices, because it's possible that the
+        same MH target will show up more than once as a DESI target.
+
+        sn_name_sp: same as from df
+        hostnum: same as from df
+        survey: one of "main", "sv1", "sv2", "sv3", or "backup"
+          NOTE --- CURRENTLY ONLY SEARCHES THE MAIN SURVEY, so this will always be "main"
+        whenobs: one of "bright" or "dark"
+        targetid: DESI target id.
+        desi_target: not sure why this isn't the same as targetid, but whatever
+        bgs_target: I *think* 0 means not in BGS
+        mws_target: (Same 0 interp)
+        scnd_target:
+
+        """
+        if self._maintargets is None:
+            self.find_main_targets()
         return self._maintargets
 
     
@@ -148,27 +162,38 @@ class MostHostsDesi(object):
     
     def __init__( self, release='daily', force_regen=False, latest_night_only=True, logger=None,
                   dbuserpwfile=None, dbuser=None, dbpasswd=None ):
-        '''Build and return the a Pandas dataframe with info about Desi observation of mosthosts hosts.
+        '''Build Pandas dataframes with info about Desi observation of mosthosts hosts.
         
         It matches by searching the daily tables by RA/Dec; things
         within 1" of the mosthosts host coordinate are considered a
         match.
         
-        release — One of daily, everest, fuji, guadalupe, or fujilupe
-                  The DESI release to get info for.  "Daily" looks at
-                  the regularly updated databse of what's been done.
-                  fujilupe is a special case that combines together fuji
-                  and guadalipe into a single dataframe.
+        release — One of daily, everest, fuji, guadalupe, fujilupe, or
+                  iron.  The DESI release to get info for.  "Daily"
+                  looks at the regularly updated databse of what's been
+                  done.  fujilupe is a special case that combines
+                  together fuji and guadalipe into a single dataframe.
 
         force_regen — by default, just reads
-                      "mosthosts_desi_{release}.csv" from the current
-                      directory.  This is much faster, as the matching
-                      takes some time, but will fall out of date.  Set
-                      force_regen to True to force it to rebuild that
-                      file from the current contents of the database.
-                      If the .csv file doesn't exist, or doesn't have
-                      all the expected columns, it will be regenerated
-                      from the database even if force_regen is False.
+                      "mosthosts_desi_{release}.pkl" and
+                      "mosthosts_desi_{release}_desiobs.pkl" from the
+                      current directory.  This is much faster, as
+                      matching mosthosts to desi observations is slow
+                      (the regen can take 10-20 minutes), but will fall
+                      out of date.  Set force_regen to True to force it
+                      to rebuild those files (and .csv files with the
+                      same information) from the current contents of the
+                      database.  If both .pkl and .csv files don't
+                      exist, they will be regenerated from the database
+                      even if force_regen is False.  Ideally, for
+                      releases like iron, you won't need to use
+                      force_regen=True, but you might want to if looking
+                      at the daily spectra.
+
+                      WARNING : it doesn't check to make sure that the
+                      structure of the tables is current when loading
+                      the .pkl files.  If you've recently updated this
+                      code, run at least once with force_regen=True.
                       
         latest_night_only — If True (default), and there are multiple
                             nights with desi spectra for the same
@@ -183,8 +208,9 @@ class MostHostsDesi(object):
                        username for connecting to the desi database, the
                        second is the password.  This file should be kept
                        somewhere in your account that is *not*
-                       world-readable.  Defaults to something in Rob's
-                       directory that you can't read....
+                       world-readable.  Defaults to
+                       "secrets/decatdb_desi_desi" underneath your home
+                       directory.
                        
         dbuser, dbpasswd — Instead of using a dbuserpwfile, you can just
                            pass the database user and password directly.
@@ -200,7 +226,7 @@ class MostHostsDesi(object):
         self._dbuser = dbuser
         self._dbpasswd = dbpasswd
         if dbuserpwfile is None:
-            self._dbuserpwfile = "/global/homes/r/raknop/secrets/decatdb_desi_desi"
+            self._dbuserpwfile = pathlib.Path( os.getenv("HOME") ) / "secrets/decatdb_desi_desi"
         else:
             self._dbuserpwfile = dbuserpwfile
             
@@ -222,10 +248,8 @@ class MostHostsDesi(object):
         else:
             # Try to read what already exists; also make sure the csv files exist
             if csvfile.is_file() and pklfile.is_file() and haszcsvfile.is_file() and haszpklfile.is_file():
-                with open( pklfile, "rb" ) as ifp:
-                    self._df = pickle.load( ifp )
-                with open( haszpklfile, "rb" ) as ifp:
-                    self._haszdf = pickle.load( ifp )
+                self._df = pandas.read_pickle( pklfile )
+                self._haszdf = pandas.read_pickle( haszpklfile )
                 self.logger.info( "Read dataframes from pkl files" )
             else:
                 mustregen = True
@@ -247,6 +271,8 @@ class MostHostsDesi(object):
     # ========================================
 
     def connect_to_database( self ):
+        if ( self._dbuser is None ) != ( self._dbpasswd is None ):
+            raise ValueError( "Both or neither of dbuser and dbpasswd must be specified, not just one." )
         if self._dbuser is None or self._dbpasswd is None:
             with open( self._dbuserpwfile ) as ifp:
                 (self._dbuser,self._dbpasswd) = ifp.readline().strip().split()
@@ -258,34 +284,31 @@ class MostHostsDesi(object):
     
     # =============================================
     
-    @staticmethod
+    # @staticmethod
     
-    # Add the spname column
-    def get_spname( row ):
-        if row['tns_name'] != 'None':
-            return row['tns_name']
-        elif row['iau_name'] != 'None':
-            return row['iau_name']
-        elif row['ptfiptf_name'] != 'None':
-            return row['ptfiptf_name']
-        else:
-            return row['snname']
+    # # Add the spname column
+    # def get_spname( row ):
+    #     if row['tns_name'] != 'None':
+    #         return row['tns_name']
+    #     elif row['iau_name'] != 'None':
+    #         return row['iau_name']
+    #     elif row['ptfiptf_name'] != 'None':
+    #         return row['ptfiptf_name']
+    #     else:
+    #         return row['snname']
             
     # ========================================
 
     def load_mosthosts( self, dbconn ):
         cursor = dbconn.cursor()
-        q = "SELECT * FROM static.mosthosts"
+        q = f"SELECT * FROM static.{self._mosthosts_table}"
         cursor.execute( q )
         mosthosts = pandas.DataFrame( cursor.fetchall() )
 
-        spname = mosthosts.apply( self.get_spname, axis=1 )
-        mosthosts['spname'] = spname
+        # Change type of hostnum to pandas Int64 so that it can be nullable
+        mosthosts['hostnum'] = mosthosts['hostnum'].astype('Int64')
 
-        # Change type of index to pandas Int64 so that it can be nullable
-        mosthosts['index'] = mosthosts['index'].astype('Int64')
-
-        mosthosts.set_index( ['snname', 'index' ], inplace=True )
+        mosthosts.set_index( ['sn_name_sp', 'hostnum' ], inplace=True )
         mosthosts = mosthosts.sort_index()
 
         cursor.close()
@@ -320,6 +343,8 @@ class MostHostsDesi(object):
     def generate_df( self, release, latest_night_only ):
         # Get the dataframe of information from the desi tables
 
+        mosthosts_subset = self.mosthosts[ [ 'ra','dec', 'sn_ra', 'sn_dec', 'sn_z' ] ]
+        
         if release == "fujilupe":
             raise RuntimeError( "Fujilupe hack not implemented." )
         
@@ -328,6 +353,7 @@ class MostHostsDesi(object):
         dbconn = self.connect_to_database()
         desidf = None
 
+        self._maintargets = None
         nhavesome = 0
         nredshifts = 0
 
@@ -335,9 +361,9 @@ class MostHostsDesi(object):
 
         # First, build a temporary table matching targetid/tile/petal to mosthosts
         self.logger.info( f'Sending q3c_join query for release {release}' )
-        query = ( f"SELECT m.snname,m.index,f.targetid,f.tileid,f.petal_loc "
+        query = ( f"SELECT m.sn_name_sp,m.hostnum,f.targetid,f.tileid,f.petal_loc "
                   f"INTO TEMP TABLE temp_mosthosts_search1 "
-                  f"FROM static.mosthosts m "
+                  f"FROM static.{self._mosthosts_table} m "
                   f"INNER JOIN {release}.tiles_fibermap f "
                   f"  ON q3c_join(m.ra,m.dec,f.target_ra,f.target_dec,%(radius)s) " )
         subs = { 'radius': 1./3600. }
@@ -353,7 +379,7 @@ class MostHostsDesi(object):
         # Next: get nights from cumulative_tiles redshifts etc. from tiles_redshifts
 
         self.logger.info( f'Getting night/redshift/type info' )
-        query = ( f"SELECT m.snname,m.index,m.targetid,m.tileid,m.petal_loc,c.night,"
+        query = ( f"SELECT m.sn_name_sp,m.hostnum,m.targetid,m.tileid,m.petal_loc,c.night,"
                   f"  r.z,r.zerr,r.zwarn,r.chi2,r.deltachi2,r.spectype,r.subtype "
                   f"FROM temp_mosthosts_search1 m "
                   f"INNER JOIN ("
@@ -383,8 +409,8 @@ class MostHostsDesi(object):
         # Merge these with the _mosthosts table to make the _haszdf table
 
         self.logger.info( "Building hazdf..." )
-        desidf.set_index( ['snname', 'index', 'targetid', 'tileid', 'petal', 'night' ], inplace=True )
-        self._haszdf = self._mosthosts.join( desidf, how="inner" )
+        desidf.set_index( ['sn_name_sp', 'hostnum', 'targetid', 'tileid', 'petal', 'night' ], inplace=True )
+        self._haszdf = mosthosts_subset.join( desidf, how="inner" )
 
         # Combine together redshifts in desidf to make a sort of aggregate redshift
         # Then make the _df table by appending this to the _mosthosts talbe
@@ -399,16 +425,17 @@ class MostHostsDesi(object):
             return row.iloc[0]
 
         subdf = desidf[ desidf['zwarn'] == 0 ]
-        combdf = subdf.reset_index().groupby( ['snname','index'] ).apply( zcomb )
-        combdf = combdf.set_index( ['snname', 'index'] )[ [ 'z', 'zerr', 'zdisp' ] ]
+        combdf = subdf.reset_index().groupby( ['sn_name_sp','hostnum'] ).apply( zcomb )
+        combdf = combdf.set_index( ['sn_name_sp', 'hostnum'] )[ [ 'z', 'zerr', 'zdisp' ] ]
         
-        self._df = self._mosthosts.join( combdf, how='left' )
+        self._df = mosthosts_subset.join( combdf, how='left' )
         
         self.logger.info( f"Done generating dataframes." )
         
     # ========================================
             
     def find_main_targets( self, radius=1./3600., force_regen=False ):
+
         """Search the DESI targets tables to match MostHosts to DESI main targets.
 
         Set force_regen=True to force searching the database.  Otherwise, it will read 
@@ -427,7 +454,7 @@ class MostHostsDesi(object):
         columns = {}
         for col in dfnoindex.columns:
             columns[col] = []
-        dbcols = [ 'm.snname', 'm.index', 'm.tns_name', 'm.iau_name', 'm.ptfiptf_name', 
+        dbcols = [ 'm.sn_name_sp', 'm.hostnum', 'm.sn_name_tns', 'm.sn_name_iau', 'm.sn_name_ptf', 
                    't.survey', 't.whenobs', 't.targetid',
                    't.desi_target', 't.bgs_target', 't.mws_target', 't.scnd_target' ]
         for col in dbcols:
@@ -438,16 +465,14 @@ class MostHostsDesi(object):
         
         self.logger.info( f'Searching DESI targets for mosthosts' )
         q = ( f"SELECT {','.join(dbcols)} "
-              f"FROM static.mosthosts m "
+              f"FROM static.{self._mosthosts_table} m "
               f"INNER JOIN general.maintargets t ON q3c_join(m.ra,m.dec,t.ra,t.dec,%(radius)s)" )
         self.logger.debug( f"Sending query: {cursor.mogrify( q, { 'radius': radius } )}" )
         cursor.execute( q, { 'radius': radius } )
         rows = cursor.fetchall()
         
         self._maintargets = pandas.DataFrame( rows )
-        spnames = self._maintargets.apply( self.get_spname, axis=1 )
-        self._maintargets['spname'] = spnames
-        self._maintargets.set_index( ['snname', 'index', 'survey', 'whenobs', 'targetid'], inplace=True )
+        self._maintargets.set_index( ['sn_name_sp', 'hostnum', 'survey', 'whenobs', 'targetid'], inplace=True )
 
         # with open( cachefile, "wb" ) as ofp:
         #     pickle.dump( self._maintargets, ofp )

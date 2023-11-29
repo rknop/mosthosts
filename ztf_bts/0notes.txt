@@ -1,0 +1,13 @@
+To do things in perlmutter:
+
+  podman-hpc run \
+      --mount type=bind,source=/global/homes/r/raknop/curveball,target=/curveball \
+      --mount type=bind,source=/global/homes/r/raknop/secrets,target=/secrets \
+      --mount type=bind,source=/pscratch/sd/r/raknop,target=/data \
+      --mount type=bind,source=/global/homes/r/raknop/desi/mosthosts,target=/mosthosts \
+      -it rknop/curveball:daedalus /bin/bash
+
+
+Make sure to cd to mosthosts.  Remember to
+
+  export CURVEBALL_CONFIG=curveballconfig
