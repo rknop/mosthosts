@@ -53,7 +53,7 @@ def buildrefs( obj ):
         return False
     
 def main():
-    with open( 'ztf_with_iron_z_justnames.list' ) as ifp:
+    with open( 'ztf_with_iron_z_justnames.lis' ) as ifp:
         sne = ifp.readlines()
     sne = [ i.strip() for i in sne ]
 
