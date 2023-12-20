@@ -1,3 +1,9 @@
 [submodule "viewthing/src/rkwebutil"]
 	path = viewthing/src/rkwebutil
 	url = git@github.com:rknop/rkwebutil.git
+[submodule "stumbler"]
+	path = stumbler
+	url = https://gitlab.com/robknop/stumbler
+[submodule "argparser"]
+	path = argparser
+	url = git@gitlab.com:robknop/argparser.git
