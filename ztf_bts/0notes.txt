@@ -19,3 +19,25 @@ To do things on brahms:
       --workdir /mosthosts/ztf_bts \
       --env CURVEBALL_CONFIG=curveballconfig \
       -it rknop/curveball:daedalus /bin/bash
+
+To do things on dirac:
+
+  apptainer exec --cleanenv \
+     --bind /global/scratch/users/raknop/curveball/incoming:/incoming \
+     --bind /clusterfs/dirac1/raknop/curveball:/curveball \
+     --bind /global/home/users/raknop/secrets:/secrets \
+     --bind /global/scratch/users/raknop/curveball/data:/data \
+     --bind /clusterfs/dirac1/raknop/desi/mosthosts:/mosthosts \
+     --pwd /mosthosts/ztf_bts \
+     --env "CURVEBALL_CONFIG=curveballconfig" \
+     /global/scratch/users/raknop/curveball_daedalus.sif \
+     /bin/bash
+
+
+======================================================================
+
+BTS website : https://sites.astro.caltech.edu/ztf/bts/bts.php
+
+Paper on public set : https://ui.adsabs.harvard.edu/abs/2020ApJ...904...35P/abstract
+
+Data access: https://sites.astro.caltech.edu/ztf/bts/explorer.php
