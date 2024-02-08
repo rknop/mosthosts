@@ -60,7 +60,10 @@ class SpectrumFinder(object):
                            you get back a set of targetids that matched
                            the ra and dec that went with that name
 
-    info_for_targetid() : pass a targetid, get back a dictionary; do
+    info_for_targetid() : pass a targetid, get back a list of
+                          dictionaries.  (A list, because there may be
+                          multiple observations of the same targetid in
+                          the desi spectrum database.)  Do
                           help(SpectrumFinder.info_for_targetid) for
                           more info.
 
