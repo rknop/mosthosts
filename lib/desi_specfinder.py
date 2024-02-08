@@ -46,29 +46,31 @@ class SpectrumFinder(object):
     Jupyter) or in a DESI environment.  There is a hardcoded NERSC CFS
     file path, so this is designed only to run at NERSC.
 
-    Create a SpectrumFinder object; do help(SpectrumFinder.__init__ for more information).
+    Create a SpectrumFinder object; in the constructor, you give it a
+    list of ras, decs, and names, as well as some optional parameters.
+    (The keyword parameter desipasswd is required; pass the standard
+    DESI password here.)  do help(SpectrumFinder.__init__ for more
+    information).
 
-, passing collection = daily, everest,
-    fuji, or guadalupe ("fujilupe" isn't currently supported) to the
-    constructor.  You must also pass the standard desipassword in
-    desipasswd.
+    Once you've created it, you can use properties and methods of the object:
 
-    Once you've instantiated an object information with the targetids
-    property, and with the info_for_targetid, get_spectra, filepath, and
-    get_spectrum methods.
+    targetids : a property that has *all* targetids found for all objects
 
-    The _tiledata variable is not intended to be accessed remotely.  I want it to have the
-    following columns:
-       targetid
-       tileid
-       petal_loc
-       night
-       device_loc
-       z
-       zerr
-       zwarn
-       deltachi2
-       filename
+    targetids_for_name() : pass the name of the object you searched on;
+                           you get back a set of targetids that matched
+                           the ra and dec that went with that name
+
+    info_for_targetid() : pass a targetid, get back a dictionary; do
+                          help(SpectrumFinder.info_for_targetid) for
+                          more info.
+
+    get_spectra() : pass a targetid, get spectra.  This will only work
+                    on nersc where it can read the desi spectrum data.  Do
+                    help(Spectrumfinder.get_spectra) for more info.
+
+    get_specrum() : in case there are multiple spectra for a given
+                    targetid, you can be anal and specify exactly which
+                    on you want; see help on the method for more info.
 
     """
 
@@ -84,7 +86,8 @@ class SpectrumFinder(object):
         radius — Radius to match DESI spectra, in degrees.  Defaults to 1./3600 (i.e. 1")
         names — (optional) list of names of objects, or name of the object.  Length must match ras.
         desipasswd — (REQUIRED) the standard DESI password.
-        collection — The collection to search; must be "daily", "everest", fuji", or "guadalupe".  Defaults to "daily".
+        collection — The collection to search; must be "daily", "everest", fuji", "guadalupe", or "iron".
+                     Defaults to "daily".
         logger — (optional) A logging.logger object
 
         After creating the object, see property targetids, and methods
@@ -93,7 +96,7 @@ class SpectrumFinder(object):
         """
         global _desispecinfologger
 
-        if collection not in { 'daily', 'everest', 'fuji', 'guadalupe' }:
+        if collection not in { 'daily', 'everest', 'fuji', 'guadalupe', 'iron' }:
             raise ValueError( f'Unknown collection "{collection}"' )
 
         self.logger = _desispecinfologger if logger is None else logger
