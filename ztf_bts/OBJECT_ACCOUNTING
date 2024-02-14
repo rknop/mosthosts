@@ -1,0 +1,191 @@
+ztf_bts_Ia_20231128.csv has 3947 objects
+
+718 have at least one DESI host observation -> ztf_with_iron_z.lis
+
+422 have references in at least 2 colors [1]
+
+420 of those have lightcurves [2] (missing ones: [3]) (list names: [4]) (list pho count: [5] )
+    Missing ones:
+       ZTF18abetewu : r-band position is off valid range of remapped ref
+       ZTF21aapfpod : r-band position is off valid range of remapped ref
+
+For further numbers, run match.py; set the variables near the beginning to do things.
+ --> ztf_with_iron_z.lis
+ --> ztf_with_iron_z_justmatch.lis
+
+361 of the 420 w/ lightcurves have at least one desi-z within 0.01 of the BTS z
+   Of the 59 mismatches, 52 have unobserved hosts on the mosthosts list
+   Of the 361 matches, 265 have unobserved hosts on the mosthosts list
+
+FURTHER OMTIS:
+  ZTF21abisowq is a disaster in r-band due to bad subtrcation of nearby sources
+  ZTF19aaeoqst gets a terrible SALT2 fit ; is it even a Ia?
+  ZTF21aaplfah gets a terrible SALT2 fit -- Peter says it's a core collapse
+  ZTF20abpuijn gets a terrible SALT2 fit -- Peter says it's a core collapse
+  ZTF21aakzmaq often has bad subtraction in r of bright (variable?) nearby object  --> was already missing
+
+  --> manually edit these out of ztf_with_iron_z_justmatch.lis
+
+To build the data file to do the Hubble fit, run make_datacsv.py on
+the output file from match.py.  This one will omit the ones that don't
+have the right tagged salt2 fit (bts_z or desi_z) in the database.
+  --> bts_mosthosts_desiz.csv
+
+359 left; feed this into hubfit.  Result with intrinsic disp of 0.19:
+
+< NEEDS UPDATING >
+
+
+Implementing cuts, 49 get removed.  Result with intrinsic disp of 0.16:
+
+< NEEDS UPDATING >
+
+
+
+[1]
+
+CREATE TEMP TABLE objwref AS
+SELECT oid,obj,nbands
+FROM (
+  SELECT o.id AS oid,o.name AS obj,COUNT(b.name) AS nbands
+  FROM object o
+  INNER JOIN object_reference r ON o.id=r.object_id
+  INNER JOIN image ri ON r.image_id=ri.id
+  INNER JOIN band b ON ri.band_id=b.id
+  GROUP BY oid,obj
+) subq
+WHERE nbands>1;
+
+
+[2]
+
+CREATE TEMP TABLE objwpho AS
+SELECT oid,obj,nbands
+FROM
+(
+  SELECT oid,obj,COUNT(band) AS nbands
+  FROM
+  (
+    SELECT objq.oid,objq.obj,b.name AS band,COUNT(photq.photid) AS numpho
+    FROM
+    (
+      SELECT oid,obj,nbands
+      FROM (
+        SELECT o.id AS oid,o.name AS obj,COUNT(b.name) AS nbands
+        FROM object o
+        INNER JOIN object_reference r ON o.id=r.object_id
+        INNER JOIN image ri ON r.image_id=ri.id
+        INNER JOIN band b ON ri.band_id=b.id
+        GROUP BY oid,obj
+      ) subobjq
+      WHERE nbands>1
+    ) objq
+    INNER JOIN object_reference r ON objq.oid=r.object_id
+    INNER JOIN image ri ON r.image_id=ri.id
+    INNER JOIN band b ON ri.band_id=b.id
+    LEFT JOIN
+      ( SELECT p.id AS photid,p.object_id AS photobjid,pi.band_id
+        FROM photometry p
+        INNER JOIN photometry_versiontag pvt ON p.id=pvt.photometry_id
+        INNER JOIN versiontag vt ON pvt.versiontag_id=vt.id AND vt.name='default'
+        INNER JOIN image pi ON p.image_id=pi.id
+      ) photq
+      ON photq.band_id=b.id AND photq.photobjid=objq.oid
+    GROUP BY objq.oid,objq.obj,b.name,b.sortdex
+    ORDER BY objq.oid,objq.obj,b.sortdex
+  ) objbandphotq
+  WHERE numpho > 0
+  GROUP BY oid,obj
+) objnbandswphoq
+WHERE nbands > 1;
+
+
+[3]
+
+SELECT r.obj AS obj,p.obj AS pobj
+FROM objwref r
+LEFT JOIN objwpho p ON p.obj=r.obj
+WHERE p.obj IS NULL;
+
+and (to see which bands have lightcurves)
+
+SELECT subq.obj,b.name,COUNT(subq2.pid)
+FROM (
+  SELECT r.obj AS obj,r.oid AS oid,p.obj AS pobj
+  FROM objwref r
+  LEFT JOIN objwpho p ON p.obj=r.obj
+  WHERE p.obj IS NULL
+) subq
+INNER JOIN object_reference r ON r.object_id=subq.oid
+INNER JOIN image i ON r.image_id=i.id
+INNER JOIN band b ON i.band_id=b.id
+LEFT JOIN (
+  SELECT o.id AS oid,pq.pid AS pid,pq.bid AS bid
+  FROM object o
+  LEFT JOIN
+  (
+    SELECT p.id AS pid,p.object_id AS oid,b.id AS bid
+    FROM photometry p
+    INNER JOIN photometry_versiontag pvt ON p.id=pvt.photometry_id
+    INNER JOIN versiontag vt ON pvt.versiontag_id=vt.id AND vt.name='default'
+    INNER JOIN image i ON p.image_id=i.id
+    INNER JOIN band b ON i.band_id=b.id
+  ) pq
+  ON o.id=pq.oid
+) subq2 ON subq2.oid=subq.oid AND subq2.bid=b.id
+GROUP BY subq.obj,b.name,b.sortdex
+ORDER BY subq.obj,b.sortdex;
+
+
+
+[4]
+
+SELECT oid,obj,nbands
+FROM
+(
+  SELECT oid,obj,COUNT(band) AS nbands
+  FROM
+  (
+    SELECT objq.oid,objq.obj,b.name AS band,COUNT(photq.photid) AS numpho
+    FROM
+    (
+      SELECT oid,obj,nbands
+      FROM (
+        SELECT o.id AS oid,o.name AS obj,COUNT(b.name) AS nbands
+        FROM object o
+        INNER JOIN object_reference r ON o.id=r.object_id
+        INNER JOIN image ri ON r.image_id=ri.id
+        INNER JOIN band b ON ri.band_id=b.id
+        GROUP BY oid,obj
+      ) subobjq
+      WHERE nbands>1
+    ) objq
+    INNER JOIN object_reference r ON objq.oid=r.object_id
+    INNER JOIN image ri ON r.image_id=ri.id
+    INNER JOIN band b ON ri.band_id=b.id
+    LEFT JOIN
+      ( SELECT p.id AS photid,p.object_id AS photobjid,pi.band_id
+        FROM photometry p
+        INNER JOIN photometry_versiontag pvt ON p.id=pvt.photometry_id
+        INNER JOIN versiontag vt ON pvt.versiontag_id=vt.id AND vt.name='default'
+        INNER JOIN image pi ON p.image_id=pi.id
+      ) photq
+      ON photq.band_id=b.id AND photq.photobjid=objq.oid
+    GROUP BY objq.oid,objq.obj,b.name,b.sortdex
+    ORDER BY objq.oid,objq.obj,b.sortdex
+  ) objbandphotq
+  WHERE numpho > 0
+  GROUP BY oid,obj
+) objnbandswphoq
+WHERE nbands > 1;
+
+
+[5]
+
+SELECT o.name,b.name,COUNT(p.id)
+FROM object o
+INNER JOIN photometry p ON o.id=p.object_id
+INNER JOIN image i ON p.image_id=i.id
+INNER JOIN band b ON i.band_id=b.id
+GROUP BY o.name,b.name,b.sortdex
+ORDER BY o.name,b.sortdex;

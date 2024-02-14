@@ -1,0 +1,80 @@
+ZTF19aazgdss -- to close to edge, ref missed in at least g-band
+ZTF21aakzmaq -- bright host routinely oversubtracted in R-band
+ZTF19aauplxw -- no points near g peak means really bad g fit
+ZTF20abswjae -- struggling to get a fit, not sure why
+ZTF21abisowq -- bright host means always bad subtraction in r
+ZTF19aaeoqst -- can't get a good fit ; not a Ia?
+
+    object    |      refbands       |   phobands    | numpho 
+--------------+---------------------+---------------+--------
+ ZTF18abetewu | {ZTF_r,ZTF_g,ZTF_i} | {ZTF_g}       |     22
+ ZTF19aazgdss | {ZTF_i,ZTF_r,ZTF_g} | {ZTF_i,ZTF_r} |     29
+ ZTF21aalkknw | {ZTF_g,ZTF_r,ZTF_i} | {ZTF_g}       |     27
+ ZTF21aaloalc | {ZTF_r,ZTF_g}       | {ZTF_g}       |     73
+ ZTF21aapfpod | {ZTF_g,ZTF_r,ZTF_i} | {ZTF_g}       |    222
+
+
+not omitted, but didn't get one of the bands:
+
+ ZTF19aaqtcmy | {ZTF_i,ZTF_r,ZTF_g} | {ZTF_g,ZTF_r} |    335
+
+
+DESI Z TOO DIFFERENT FROM BTS Z
+-------------------------------
+ZTF18aanygjk
+ZTF18aawjywv
+ZTF18aaxmhvk
+ZTF18abgxvra
+ZTF18ablwtkf
+ZTF18abmkaps
+ZTF18acqsfxh
+ZTF19aakljys
+ZTF19aaknign
+ZTF19aaluprf
+ZTF19aamhhae
+ZTF19aanmdsr
+ZTF19aansyyn
+ZTF19aapszzy
+ZTF19aaqtyku
+ZTF19aaumvig
+ZTF19aazdirb
+ZTF20abefzfc
+ZTF20abegopd
+ZTF20abpeyat
+ZTF20abqgzhh
+ZTF20abqlgtv
+ZTF20abrdvpj
+ZTF20abyiycy
+ZTF20acfvsze
+ZTF20achzugy
+ZTF20aciuakv
+ZTF20acjhhqx
+ZTF20acnsinb
+ZTF20acnyxln
+ZTF20acphcdv
+ZTF20acpjfln
+ZTF20acwoamm
+ZTF21aaahyjj
+ZTF21aagtqgz
+ZTF21aahkvem
+ZTF21aamiukc
+ZTF21aanrvcq
+ZTF21aapvxnf
+ZTF21aaunadg
+ZTF21aavqwhh
+ZTF21abbliav
+ZTF21abcfgub
+ZTF21abcmjdy
+ZTF21abcpazz
+ZTF21abcrhpk
+ZTF21abeokcr
+ZTF21abgmyzw
+ZTF21abuxuxj
+ZTF21abxlpkc
+ZTF21abzkgvc
+ZTF21acaspdb
+ZTF21acbvwej
+ZTF21acbxtqq
+ZTF21acdkxcr
+ZTF21aceqgbv
+ZTF21acjnzdh
