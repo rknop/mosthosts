@@ -50,7 +50,7 @@ class MostHostsDesi(object):
 
     '''
 
-    _mosthosts_table = 'mosthosts_20230823'
+    _mosthosts_table = 'mosthosts'
     
     @property
     def mosthosts( self ):
