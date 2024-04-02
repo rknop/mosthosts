@@ -78,7 +78,7 @@ class SpectrumFinder(object):
     """
 
     BASE_DIR = pathlib.Path( "/global/cfs/cdirs/desi/spectro/redux" ) 
-    nameparse = re.compile('^(.*)/(zbest|redrock)(-[0-9]-[0-9]{2,6}-thru[0-9]{8}.fits)$' )
+    nameparse = re.compile('^(.*)/(zbest|redrock)(-[0-9]-[0-9]{1,6}-thru[0-9]{8}.fits)$' )
 
     def __init__( self, ras, decs, radius=1./3600.,
                   names=None, desipasswd=None, collection='daily', logger=None ):
@@ -232,7 +232,7 @@ class SpectrumFinder(object):
 
         match = self.nameparse.search( row["filename"] )
         if match is None:
-            raise ValueError( f'Error parsing filename {spec["filename"]}' )
+            raise ValueError( f'Error parsing filename {row["filename"]}' )
         return self.BASE_DIR / match.group(1) / f"coadd{match.group(3)}"
 
     def get_spectrum( self, targetid, tile, petal, night, smooth=0 ):
