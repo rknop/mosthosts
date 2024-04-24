@@ -23,6 +23,7 @@ if not _logger.hasHandlers():
     _logger.addHandler( _logout )
     _logout.setFormatter( logging.Formatter( f'[%(asctime)s - %(levelname)s] - %(message)s' ) )
 _logger.setLevel( logging.INFO )
+# _logger.setLevel( logging.DEBUG )
 
 # ======================================================================
 
@@ -59,48 +60,60 @@ def pearson_hash( string ):
 
 def host_subprocessor( pipe, dbpasswd, logger ):
     me = multiprocessing.current_process()
-    logger.info( f"host_subprocessor starting: {me.name} {me.pid}" )
+    logger.info( f"host_subprocessor starting: {me.name} PID {me.pid}" )
     try:
         done = False
         while not done:
             command = pipe.recv()
 
             if command['command'] == 'die':
-                logger.info( f"{me.pid} : got die command" )
+                logger.info( f"{me.name} : got die command" )
                 done = True
 
             elif command['command'] == 'snhost':
                 snname = command['snname']
+                cleansnname = snname.replace( "/", "_" )
                 host = command['host']
                 ra = command['ra']
                 dec = command['dec']
                 phash = pearson_hash( snname )
 
-                logger.info( f"{me.name} {me.pid} doing {snname} host {host}" )
+                logger.info( f"{me.name} doing {snname} host {host}" )
 
+                # **** HACK ALERT ; only keep 57
+                if phash != '57':
+                    pipe.send( [] )
+                    continue
+                # ****
+                
                 dex = 0
+                retspec = []
 
                 finder = SpectrumFinder( ra, dec, names='{snname}_{host}',
                                          desipasswd=dbpasswd, collection='daily', logger=logger )
                 for targid in finder.targetids:
                     specinfos = finder.info_for_targetid( targid )
-                    retspec = []
-                    logger.info( f"...{len(specinfos)} spectra for targetid {targid} of {snname} {host}" )
+                    logger.debug( f"...{len(specinfos)} spectra for targetid {targid} of {snname} {host}" )
                     for i, specinfo in enumerate( specinfos ):
-                        spec = finder.get_spectrum( targid, specinfo['tileid'],
-                                                    specinfo['petal_loc'], specinfo['night'] )
+                        try:
+                            spec = finder.get_spectrum( targid, specinfo['tileid'],
+                                                        specinfo['petal_loc'], specinfo['night'] )
+                        except FileNotFoundError as ex:
+                            logger.error( f"Failed to find file for {targid} of {snname}_{host}: {ex}; skipping" )
+                            continue
                         night = str( specinfo['night'] )
                         strnight = f'{night[0:4]}-{night[4:6]}-{night[6:8]}'
                         try:
-                            outfile = outdir / phash[0] / phash[1] / f'{snname}_host{host}_{dex}.csv'
+                            outfile = outdir / phash[0] / phash[1] / f'{cleansnname}_host{host}_{dex}.csv'
                         except Exception as ex:
                             strio = io.StringIO()
                             traceback.print_exc( file=strio )
                             strio.write( f"\nphash={phash}" )
                             logger.error( strio.getvalue() )
-                        logger.info( f"{me.pid} Writing {outfile}" )
                         dfluxen = numpy.sqrt( 1 / spec.ivar['brz'] )
                         #### dflux[ spec.ivar['brz'] <= 0 ] = sys.float_info.max
+                        logger.debug( f"{me.name} writing spectrum {outfile.name} for "
+                                      f"{cleansnname} host {host} dex {dex}" )
                         with open(outfile, "w") as ofp:
                             ofp.write( "lambda flux dflux\n" )
                             # TODO : figure out what the array of flux arrays means!
@@ -110,19 +123,19 @@ def host_subprocessor( pipe, dbpasswd, logger ):
                         dex += 1
                 pipe.send( retspec )
             else:
-                logger.error( f"{me.name} {me.pid} unknown command {command['command']}, ignoring" )
+                logger.error( f"{me.name} unknown command {command['command']}, ignoring" )
 
     except EOFError as ex:
-        logger.info( f"Pipe received EOF, closing down process {me.name} {me.pid}" )
+        logger.info( f"Pipe received EOF, closing down process {me.name} PID {me.pid}" )
         return
     except Exception as ex:
         strio = io.StringIO()
-        strio.write( f"Process {me.name} {me.pid} returning after exception: {ex}\n" )
-        traceback.print_db( file=strio )
+        strio.write( f"Process {me.name} PID {me.pid} returning after exception: {ex}\n" )
+        traceback.print_tb( file=strio )
         logger.error( strio.getvalue() )
         return
 
-    logger.info( f"{me.pid} exiting" )
+    logger.info( f"{me.name} PID {me.pid} exiting" )
     
 # ======================================================================
 
@@ -153,7 +166,8 @@ def main():
     for i in range( numprocs ):
         mypipe, theirpipe = multiprocessing.Pipe( True )
         pipes.append( mypipe )
-        proc = multiprocessing.Process( target=host_subprocessor, args=( theirpipe, dbpasswd, _logger ) )
+        proc = multiprocessing.Process( target=host_subprocessor, args=( theirpipe, dbpasswd, _logger ),
+                                        name=f'proc {i}' )
         proc.start()
     idleprocs = list( range( numprocs ) )
     busyprocs = []
@@ -188,11 +202,18 @@ def main():
     # _logger.info( f"Going to do:{nl}{nl.join([ f'{r.sn_name_sp} {r.hostnum} {r.targetid} {r.tileid} {r.petal} {r.night}' for r in tmp.itertuples()])} " )
     # sys.exit(20)
     # ****
-    
-    irate = mosthosts.haszdf.iloc[20000:20500].itertuples()
+
+    irate = mosthosts.haszdf.itertuples()
+    # *** HACK ALERT: just do some
+    # irate = mosthosts.haszdf.iloc[15290:15790].itertuples()
+    # ****
     while not done:
 
+        kaglorky = False
         while len( idleprocs ) > 0:
+            if not kaglorky:
+                kaglorky = True
+                _logger.debug( "Starting idleprocs loop" )
             try:
                 tup = next( irate )
             except StopIteration as ex:
@@ -212,20 +233,26 @@ def main():
 
                 which = idleprocs.pop()
                 busyprocs.append( which )
-                _logger.info( f"Sending {snname} {snhost} to process {which}" )
+                _logger.info( f"Sending {snname} {snhost} to proc {which}" )
                 pipes[ which ].send( { 'command': 'snhost',
                                        'snname': snname,
                                        'host': snhost,
                                        'ra': tup.ra,
                                        'dec': tup.dec } )
+        if kaglorky:
+            _logger.debug( "Finished idleprocs loop" )
 
         busydex = 0
         while busydex < len( busyprocs ):
             if pipes[busyprocs[busydex]].poll():
                 rvals = pipes[busyprocs[busydex]].recv()
-                _logger.info( f"Got {rvals[0][0]} {rvals[0][1]} from {busyprocs[busydex]}" )
+                if len(rvals) > 0:
+                    _logger.info( f"Got {rvals[0][0]} {rvals[0][1]} ({len(rvals)} dexen) "
+                                  f"from proc {busyprocs[busydex]}" )
+                else:
+                    _logger.warning( f"Got empty return from proc {busyprocs[busydex]}" )
+                idleprocs.append( busyprocs[busydex] )
                 del busyprocs[busydex]
-                idleprocs.append( busydex )
                 for rval in rvals:
                     appendvals( rval )
             else:
@@ -286,7 +313,7 @@ def main():
         
         if ok and ( thismh.z.max() - thismh.z.min() > 0.001 ):
             _logger.warning( f"{tup.snname} {tup.host} {tup.targid}; it has divergent zs: "
-                           f"{[ row.z for row in thismh.itertuples() ]}" )
+                             f"{[ row.z for row in thismh.itertuples() ]}" )
             # ok = False
 
         if ok:
@@ -314,8 +341,7 @@ def main():
                'Spec Type-Id','Spec Quality-Id','Spec. Prop-period value','Prop-period units',
                'Assoc. Groups','Spec-Remarks','Publish (bibcode)','Contrib','Related-file1',
                'RF1 Comments','Related-file2','RF2 Comments' ]
-    constants = { 'Obj. IAU-name*': 'TODO',
-                  'Source Group-Id*': 78,
+    constants = { 'Source Group-Id*': 78,
                   'Obj. Type-Id': 1,
                   'Obj. Prop-period value': 'NULL',
                   'Prop-period units': 'NULL',
@@ -359,34 +385,36 @@ def main():
                 'Obs-date* [YYYY-MM-DD HH:MM:SS] / JD': 'night',
                 'Spec-Remarks': 'hostcomment',
                }
-    manuals = [ 'Host-name', 'Ascii-filename*' ]
-                
+    manuals = [ 'Host-name', 'Ascii-filename*', 'Obj. IAU-name*' ]
+
+    _logger.info( f"About to write csv files, outmess has len(outmess) rows" )
     for phash0 in '0123456789abcdef':
         for phash1 in '0123456789abcdef':
             thismess = outmess[ ( outmess.phash0==phash0 ) & ( outmess.phash1==phash1 ) ]
             if len(thismess) == 0:
                 continue
-            _logger.info( f"Writing {phash0}{phash1}.csv" )
+            _logger.info( f"Writing {phash0}{phash1}.csv ; {len(thismess)} rows" )
             with open( f'exported_spectra/{phash0}{phash1}.csv', 'w' ) as ofp:
-                ofp.write( '"Obj. IAU-name*","Obj. internal-name*","Source Group-Id*",'
-                           '"RA","DEC","Obj. Type-Id","Redshift","Host-name","Host-redshift",'
-                           '"Obj. Prop-period value","Prop-period units","Assoc. Groups",'
-                           '"Ascii-filename*","FITS-filename*","Obs-date* [YYYY-MM-DD HH:MM:SS] / JD",'
-                           '"Instrument-Id*","Exp-time (sec)","WL Units-id","WL Medium-Id",'
-                           '"Flux Unit Coeff","Flux Units-Id","Flux Calib. By-Id","Extinction-Corrected-Id",'
-                           '"Observer/s","Reducer/s","Reduction-date [YYYY-MM-DD HH:MM:SS] / JD",'
-                           '"Aperture (Slit)","Dichroic","Grism","Grating","Blaze","Airmass","Hour Angle",'
-                           '"Spec Type-Id","Spec Quality-Id","Spec. Prop-period value","Prop-period units",'
-                           '"Assoc. Groups","Spec-Remarks","Publish (bibcode)","Contrib","Related-file1",'
-                           '"RF1 Comments","Related-file2","RF2 Comments"\n' )
+                ofp.write( '"Obj. IAU-name*"\t"Obj. internal-name*"\t"Source Group-Id*"\t'
+                           '"RA"\t"DEC"\t"Obj. Type-Id"\t"Redshift"\t"Host-name"\t"Host-redshift"\t'
+                           '"Obj. Prop-period value"\t"Prop-period units"\t"Assoc. Groups"\t'
+                           '"Ascii-filename*"\t"FITS-filename*"\t"Obs-date* [YYYY-MM-DD HH:MM:SS] / JD"\t'
+                           '"Instrument-Id*"\t"Exp-time (sec)"\t"WL Units-id"\t"WL Medium-Id"\t'
+                           '"Flux Unit Coeff"\t"Flux Units-Id"\t"Flux Calib. By-Id"\t"Extinction-Corrected-Id"\t'
+                           '"Observer/s"\t"Reducer/s"\t"Reduction-date [YYYY-MM-DD HH:MM:SS] / JD"\t'
+                           '"Aperture (Slit)"\t"Dichroic"\t"Grism"\t"Grating"\t"Blaze"\t"Airmass"\t"Hour Angle"\t'
+                           '"Spec Type-Id"\t"Spec Quality-Id"\t"Spec. Prop-period value"\t"Prop-period units"\t'
+                           '"Assoc. Groups"\t"Spec-Remarks"\t"Publish (bibcode)"\t"Contrib"\t"Related-file1"\t'
+                           '"RF1 Comments"\t"Related-file2"\t"RF2 Comments"\n' )
 
                 for row in thismess.itertuples():
                     first = True
+                    _logger.debug( f"Adding to CSV for {pathlib.Path(getattr(row,'outfile')).name}" )
                     for kw in fields:
                         if first:
                             first = False
                         else:
-                            ofp.write( "," )
+                            ofp.write( "\t" )
                         if kw in constants.keys():
                             if isinstance( constants[kw], str ):
                                 ofp.write( f'"{constants[kw]}"' )
@@ -409,11 +437,23 @@ def main():
                                     ofp.write( str(val) )
 
                         elif kw in manuals:
+                            mhentry = mosthosts.mosthosts.xs( row.snname, level='sn_name_sp' )
                             if kw == 'Host-name':
-                                ofp.write( f'"host {getattr( row, "host" )}"' )
+                                ofp.write( f'"host {getattr( row, "host" )}' )
+                                if len(mhentry) > 1:
+                                    ofp.write( f' ({len(mhentry)} host candidates)' )
+                                ofp.write( '"' )
                             elif kw == 'Ascii-filename*':
                                 outfile = getattr( row, "outfile" )
                                 ofp.write( f'"{pathlib.Path(outfile).name}"' )
+                            elif kw == 'Obj. IAU-name*':
+                                mh0 = mhentry.iloc[0]
+                                if ( mh0.sn_name_iau is not None ):
+                                    ofp.write( f'"{mh0.sn_name_iau}"' )
+                                elif ( mh0.sn_name_tns is not None ):
+                                    ofp.write( f'"{mh0.sn_name_tns}"' )
+                                else:
+                                    ofp.write( '"NULL"' )
                             else:
                                 _logger.error( "Error 27B/6" )
 

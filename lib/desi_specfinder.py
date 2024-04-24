@@ -250,7 +250,7 @@ class SpectrumFinder(object):
         """
         filepath = self.filepath( targetid, tile, petal, night )
         if not filepath.is_file():
-            raise FileNotFoundError( f'File {spec["filename"]} doesn\'t exist' )
+            raise FileNotFoundError( f'File {filepath} doesn\'t exist' )
         threespectrums = desispec.io.spectra.read_spectra( filepath ).select( targets=[targetid] )
         # Combine B, R, Z into brz
         spectrum = desispec.coaddition.coadd_cameras( threespectrums )
